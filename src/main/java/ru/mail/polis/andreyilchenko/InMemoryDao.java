@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
-    private final ConcurrentNavigableMap<ByteBuffer, ByteBuffer> entries = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<ByteBuffer, BaseEntry<ByteBuffer>> entries = new ConcurrentSkipListMap<>();
 
     @Override
     public Iterator<BaseEntry<ByteBuffer>> get(ByteBuffer from, ByteBuffer to) {
@@ -21,14 +21,13 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             from = entries.firstKey();
         }
         if (to == null) {
-            return new BaseEntryIterator<>(entries.subMap(from, true, entries.lastKey(), true)
-                    .entrySet().iterator());
+            return entries.subMap(from, true, entries.lastKey(), true).values().iterator();
         }
-        return new BaseEntryIterator<>(entries.subMap(from, to).entrySet().iterator());
+        return entries.subMap(from, to).values().iterator();
     }
 
     @Override
     public void upsert(BaseEntry<ByteBuffer> entry) {
-        entries.put(entry.key(), entry.value());
+        entries.put(entry.key(), entry);
     }
 }
