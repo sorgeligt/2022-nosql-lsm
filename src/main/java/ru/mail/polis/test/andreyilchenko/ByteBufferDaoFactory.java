@@ -1,8 +1,8 @@
 package ru.mail.polis.test.andreyilchenko;
 
 import ru.mail.polis.BaseEntry;
-import ru.mail.polis.Entry;
 import ru.mail.polis.Dao;
+import ru.mail.polis.Entry;
 import ru.mail.polis.andreyilchenko.InMemoryDao;
 import ru.mail.polis.test.DaoFactory;
 
@@ -19,8 +19,11 @@ public class ByteBufferDaoFactory implements DaoFactory.Factory<ByteBuffer, Base
 
     @Override
     public String toString(ByteBuffer data) {
-        return data == null ? null : new String(data.array(), data.arrayOffset() + data.position(),
-                data.remaining(), StandardCharsets.UTF_8);
+        if (data == null) {
+            return null;
+        }
+        int dataCurrentPosition = data.arrayOffset() + data.position();
+        return new String(data.array(), dataCurrentPosition, data.remaining(), StandardCharsets.UTF_8);
     }
 
     @Override
