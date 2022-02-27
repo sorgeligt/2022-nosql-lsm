@@ -17,11 +17,11 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         if (entries.isEmpty()) {
             return Collections.emptyIterator();
         }
-        if (from == null) {
-            from = entries.firstKey();
-        }
         if (to == null) {
-            return entries.subMap(from, true, entries.lastKey(), true).values().iterator();
+            return entries.tailMap(from == null ? entries.firstKey() : from).values().iterator();
+        }
+        if (from == null) {
+            return entries.headMap(to).values().iterator();
         }
         return entries.subMap(from, to).values().iterator();
     }

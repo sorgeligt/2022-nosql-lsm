@@ -1,8 +1,8 @@
 package ru.mail.polis.test.andreyilchenko;
 
 import ru.mail.polis.BaseEntry;
-import ru.mail.polis.Dao;
 import ru.mail.polis.Entry;
+import ru.mail.polis.Dao;
 import ru.mail.polis.andreyilchenko.InMemoryDao;
 import ru.mail.polis.test.DaoFactory;
 
