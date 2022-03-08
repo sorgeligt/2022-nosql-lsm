@@ -69,7 +69,6 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         return entry == null ? findInFile(key) : entry;
     }
 
-
     @Override
     public void upsert(BaseEntry<ByteBuffer> entry) {
         entries.put(entry.key(), entry);
@@ -94,44 +93,48 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw")) {
-            byte tempByte;
-            long startIndex = 0;
             long endIndex = reader.length();
-            if (endIndex == 0) {
+            if (endIndex == 0) { // File is empty
                 return null;
             }
-            long midIndex;
-            while (startIndex <= endIndex) {
-                midIndex = (endIndex + startIndex) >> 1;
-                reader.seek(midIndex);
-                while (reader.readByte() != DATA_SEPARATOR) {/*skip bytes*/}
-                try {
-                    tempByte = reader.readByte();
-                } catch (EOFException e) { // the binary search part is not included in the file boundaries
-                    if (midIndex == 0) {
-                        return checkFirstEntry(key, reader);
-                    }
-                    endIndex = midIndex;
-                    continue;
+            return getValueUsingBinarySearch(key, reader, 0, endIndex);
+        }
+    }
+
+    private BaseEntry<ByteBuffer> getValueUsingBinarySearch(
+            ByteBuffer key, RandomAccessFile reader, long startIndex, long endIndex) throws IOException {
+        byte tempByte;
+        long midIndex;
+        while (startIndex <= endIndex) {
+            midIndex = (endIndex + startIndex) >> 1;
+            reader.seek(midIndex);
+            while (reader.readByte() != DATA_SEPARATOR);
+            try {
+                tempByte = reader.readByte();
+            } catch (EOFException e) { // the binary search part is not included in the file boundaries
+                if (midIndex == 0) {
+                    return checkFirstEntry(key, reader);
                 }
-                if (tempByte == key.get(0)) { // probably found the necessary key
-                    ByteBuffer possibleKey = readTheRemainingKey(reader, tempByte);
-                    if (possibleKey.equals(key)) {
-                        ByteBuffer value = readToSeparator(reader, DATA_SEPARATOR);
-                        return new BaseEntry<>(key, value);
-                    } else if (possibleKey.compareTo(key) > 0) {
-                        endIndex = midIndex;
-                    } else {
-                        startIndex = midIndex;
-                    }
-                } else if (tempByte > key.get(0)) {
+                endIndex = midIndex;
+                continue;
+            }
+            if (tempByte == key.get(0)) { // probably found the necessary key
+                ByteBuffer possibleKey = readTheRemainingKey(reader, tempByte);
+                if (possibleKey.equals(key)) {
+                    ByteBuffer value = readToSeparator(reader, DATA_SEPARATOR);
+                    return new BaseEntry<>(key, value);
+                } else if (possibleKey.compareTo(key) > 0) {
                     endIndex = midIndex;
                 } else {
                     startIndex = midIndex;
                 }
+            } else if (tempByte > key.get(0)) {
+                endIndex = midIndex;
+            } else {
+                startIndex = midIndex;
             }
-            return null;
         }
+        return null;
     }
 
     private ByteBuffer readTheRemainingKey(RandomAccessFile reader, byte firstByte) throws IOException {
