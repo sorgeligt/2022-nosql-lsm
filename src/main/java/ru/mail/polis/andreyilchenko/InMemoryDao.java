@@ -11,7 +11,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -76,9 +75,6 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     @Override
     public Iterator<BaseEntry<ByteBuffer>> get(ByteBuffer from, ByteBuffer to) {
-        if (entries.isEmpty()) {
-            return Collections.emptyIterator();
-        }
         if (to == null && from == null) {
             return entries.values().iterator();
         }
@@ -92,7 +88,7 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     }
 
     private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
-        try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw")) {
+        try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "r")) {
             long fileLength = reader.length();
             if (fileLength == 0) { // File is empty
                 return null;
