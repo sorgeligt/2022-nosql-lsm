@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Iterator;
@@ -27,6 +28,13 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     public InMemoryDao(Config config, int allocateBufferSize) {
         this.pathToData = config.basePath();
         this.allocateBufferSize = allocateBufferSize;
+        if (Files.notExists(pathToData)) {
+            try {
+                Files.createFile(pathToData);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     public InMemoryDao(Config config) {
@@ -53,9 +61,9 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     @Override
     public BaseEntry<ByteBuffer> get(ByteBuffer key) throws IOException {
-        BaseEntry<ByteBuffer> entry = entries.get(key);
-        return entry == null ? findInFile(key) : entry;
+        return entries.get(key) == null ? findInFile(key) : entries.get(key);
     }
+
 
     @Override
     public void upsert(BaseEntry<ByteBuffer> entry) {
