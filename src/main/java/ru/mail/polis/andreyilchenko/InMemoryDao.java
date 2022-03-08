@@ -5,12 +5,12 @@ import ru.mail.polis.Config;
 import ru.mail.polis.Dao;
 
 import java.io.EOFException;
+import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentNavigableMap;
@@ -23,14 +23,14 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     private final int allocateBufferSize;
     private final ConcurrentNavigableMap<ByteBuffer, BaseEntry<ByteBuffer>> entries = new ConcurrentSkipListMap<>();
-    private final Path pathToData;
+    private final File file;
 
     public InMemoryDao(Config config, int allocateBufferSize) {
-        this.pathToData = config.basePath();
+        this.file = config.basePath().toFile();
         this.allocateBufferSize = allocateBufferSize;
-        if (Files.notExists(pathToData)) {
+        if (Files.notExists(file.toPath())) {
             try {
-                Files.createFile(pathToData);
+                Files.createFile(file.toPath());
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -43,7 +43,7 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     @Override
     public synchronized void flush() throws IOException {
-        try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw");
+        try (RandomAccessFile reader = new RandomAccessFile(file, "rw");
              FileChannel channel = reader.getChannel()) {
             ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferSize);
             bufferToWrite.putChar(DATA_SEPARATOR); // separator at the beginning of the file
@@ -87,8 +87,8 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         return entries.subMap(from, to).values().iterator();
     }
 
-    private synchronized BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
-        try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "r")) {
+    private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
+        try (RandomAccessFile reader = new RandomAccessFile(file, "rw")) {
             byte tempByte;
             long startIndex = 0;
             long endIndex = reader.length();
