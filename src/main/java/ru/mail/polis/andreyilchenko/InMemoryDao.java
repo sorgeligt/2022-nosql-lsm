@@ -5,12 +5,12 @@ import ru.mail.polis.Config;
 import ru.mail.polis.Dao;
 
 import java.io.EOFException;
-import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentNavigableMap;
@@ -23,14 +23,14 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     private final int allocateBufferSize;
     private final ConcurrentNavigableMap<ByteBuffer, BaseEntry<ByteBuffer>> entries = new ConcurrentSkipListMap<>();
-    private final File file;
+    private final Path pathToData;
 
     public InMemoryDao(Config config, int allocateBufferSize) {
-        this.file = config.basePath().toFile();
+        this.pathToData = config.basePath().toAbsolutePath();
         this.allocateBufferSize = allocateBufferSize;
-        if (Files.notExists(file.toPath())) {
+        if (Files.notExists(pathToData)) {
             try {
-                Files.createFile(file.toPath());
+                Files.createFile(pathToData);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -42,9 +42,13 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     }
 
     @Override
-    public synchronized void flush() throws IOException {
-        try (RandomAccessFile reader = new RandomAccessFile(file, "rw");
+    public void flush() throws IOException {
+        if (Files.exists(pathToData)) {
+            Files.delete(pathToData);
+        }
+        try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw");
              FileChannel channel = reader.getChannel()) {
+
             ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferSize);
             bufferToWrite.putChar(DATA_SEPARATOR); // separator at the beginning of the file
             for (BaseEntry<ByteBuffer> entry : entries.values()) {
@@ -61,7 +65,8 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     @Override
     public BaseEntry<ByteBuffer> get(ByteBuffer key) throws IOException {
-        return entries.get(key) == null ? findInFile(key) : entries.get(key);
+        BaseEntry<ByteBuffer> entry = entries.get(key);
+        return entry == null ? findInFile(key) : entry;
     }
 
 
@@ -88,10 +93,13 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     }
 
     private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
-        try (RandomAccessFile reader = new RandomAccessFile(file, "rw")) {
+        try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw")) {
             byte tempByte;
             long startIndex = 0;
             long endIndex = reader.length();
+            if (endIndex == 0) {
+                return null;
+            }
             long midIndex;
             while (startIndex <= endIndex) {
                 midIndex = (endIndex + startIndex) >> 1;
