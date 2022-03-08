@@ -42,7 +42,7 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     }
 
     @Override
-    public void flush() throws IOException {
+    public synchronized void flush() throws IOException {
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw");
              FileChannel channel = reader.getChannel()) {
             ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferSize);
@@ -87,7 +87,7 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         return entries.subMap(from, to).values().iterator();
     }
 
-    private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
+    private synchronized BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "r")) {
             byte tempByte;
             long startIndex = 0;
