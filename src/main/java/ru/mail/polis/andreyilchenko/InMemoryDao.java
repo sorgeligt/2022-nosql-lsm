@@ -93,22 +93,24 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw")) {
-            long endIndex = reader.length();
-            if (endIndex == 0) { // File is empty
+            long fileLength = reader.length();
+            if (fileLength == 0) { // File is empty
                 return null;
             }
-            return getValueUsingBinarySearch(key, reader, 0, endIndex);
+            return getValueUsingBinarySearch(key, reader, 0, fileLength);
         }
     }
 
     private BaseEntry<ByteBuffer> getValueUsingBinarySearch(
-            ByteBuffer key, RandomAccessFile reader, long startIndex, long endIndex) throws IOException {
+            ByteBuffer key, RandomAccessFile reader, long fileStartPosition, long fileLength) throws IOException {
         byte tempByte;
+        long startIndex = fileStartPosition;
+        long endIndex = fileLength;
         long midIndex;
         while (startIndex <= endIndex) {
             midIndex = (endIndex + startIndex) >> 1;
             reader.seek(midIndex);
-            while (reader.readByte() != DATA_SEPARATOR);
+            while (reader.readByte() != DATA_SEPARATOR) {/*skip bytes*/}
             try {
                 tempByte = reader.readByte();
             } catch (EOFException e) { // the binary search part is not included in the file boundaries
@@ -118,12 +120,15 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
                 endIndex = midIndex;
                 continue;
             }
+
             if (tempByte == key.get(0)) { // probably found the necessary key
                 ByteBuffer possibleKey = readTheRemainingKey(reader, tempByte);
-                if (possibleKey.equals(key)) {
+                int compareResult = possibleKey.compareTo(key);
+
+                if (compareResult == 0) {
                     ByteBuffer value = readToSeparator(reader, DATA_SEPARATOR);
                     return new BaseEntry<>(key, value);
-                } else if (possibleKey.compareTo(key) > 0) {
+                } else if (compareResult > 0) {
                     endIndex = midIndex;
                 } else {
                     startIndex = midIndex;
