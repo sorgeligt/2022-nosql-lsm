@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Iterator;
@@ -21,25 +20,21 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     private static final char KEY_VALUE_SEPARATOR = '\u001d';
     private static final int DEFAULT_ALLOCATE_BUFFER_SIZE = 0x400;
 
+    private final int allocateBufferSize;
     private final ConcurrentNavigableMap<ByteBuffer, BaseEntry<ByteBuffer>> entries = new ConcurrentSkipListMap<>();
     private final Path pathToData;
-    private int allocateBufferSize;
-
-    public InMemoryDao(Config config) {
-        this.pathToData = config.basePath();
-        this.allocateBufferSize = DEFAULT_ALLOCATE_BUFFER_SIZE;
-    }
 
     public InMemoryDao(Config config, int allocateBufferSize) {
-        this(config);
+        this.pathToData = config.basePath();
         this.allocateBufferSize = allocateBufferSize;
+    }
+
+    public InMemoryDao(Config config) {
+        this(config, DEFAULT_ALLOCATE_BUFFER_SIZE);
     }
 
     @Override
     public void flush() throws IOException {
-        if (Files.exists(pathToData)) {
-            Files.delete(pathToData);
-        }
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw");
              FileChannel channel = reader.getChannel()) {
             ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferSize);
@@ -87,7 +82,9 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "r")) {
             byte tempByte;
-            long startIndex = 0, endIndex = reader.length(), midIndex;
+            long startIndex = 0;
+            long endIndex = reader.length();
+            long midIndex;
             while (startIndex <= endIndex) {
                 midIndex = (endIndex + startIndex) >> 1;
                 reader.seek(midIndex);
@@ -121,11 +118,11 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         }
     }
 
-
-    private ByteBuffer readTheRemainingKey(RandomAccessFile reader, byte tempByte) throws IOException {
+    private ByteBuffer readTheRemainingKey(RandomAccessFile reader, byte firstByte) throws IOException {
         ByteBuffer key = ByteBuffer.allocate(allocateBufferSize);
-        key.put(tempByte);
+        key.put(firstByte);
         int i = 0;
+        byte tempByte;
         while ((tempByte = reader.readByte()) != KEY_VALUE_SEPARATOR) {
             i++;
             key.put(tempByte);
