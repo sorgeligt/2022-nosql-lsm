@@ -110,7 +110,7 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         while (startIndex <= endIndex) {
             midIndex = (endIndex + startIndex) >> 1;
             reader.seek(midIndex);
-            while (reader.readByte() != DATA_SEPARATOR) {/*skip bytes*/}
+            moveToNextDataSeparator(reader);
             try {
                 tempByte = reader.readByte();
             } catch (EOFException e) { // the binary search part is not included in the file boundaries
@@ -140,6 +140,13 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             }
         }
         return null;
+    }
+
+    private void moveToNextDataSeparator(RandomAccessFile reader) throws IOException {
+        byte tempByte;
+        do {
+            tempByte = reader.readByte();
+        } while (tempByte != DATA_SEPARATOR);
     }
 
     private ByteBuffer readTheRemainingKey(RandomAccessFile reader, byte firstByte) throws IOException {
