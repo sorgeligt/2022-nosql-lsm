@@ -14,29 +14,31 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.logging.Logger;
 
-public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
+public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     private static final char DATA_SEPARATOR = '\u0017';
     private static final char KEY_VALUE_SEPARATOR = '\u001d';
     private static final int DEFAULT_ALLOCATE_BUFFER_SIZE = 0x400;
+    private static final Logger log = Logger.getLogger(PersistentDao.class.getName());
 
     private final int allocateBufferSize;
     private final ConcurrentNavigableMap<ByteBuffer, BaseEntry<ByteBuffer>> entries = new ConcurrentSkipListMap<>();
     private final Path pathToData;
 
-    public InMemoryDao(Config config, int allocateBufferSize) {
+    public PersistentDao(Config config, int allocateBufferSize) {
         this.pathToData = config.basePath().toAbsolutePath();
         this.allocateBufferSize = allocateBufferSize;
         if (Files.notExists(pathToData)) {
             try {
                 Files.createFile(pathToData);
             } catch (IOException e) {
-                e.printStackTrace();
+                log.severe("FileSystem error, cannot create file");
             }
         }
     }
 
-    public InMemoryDao(Config config) {
+    public PersistentDao(Config config) {
         this(config, DEFAULT_ALLOCATE_BUFFER_SIZE);
     }
 
