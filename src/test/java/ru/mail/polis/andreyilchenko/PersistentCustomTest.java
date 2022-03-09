@@ -15,8 +15,8 @@ public class PersistentCustomTest extends BaseTest {
         dao.upsert(entry("a", "b"));
         dao.upsert(entry("bKey!", "VALUE"));
         dao.upsert(entry("ccadcacwkka", "d"));
-        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("ergafe", "faw54fa5w4fw35a"));
+        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("fff", "v1"));
         dao.upsert(entry("nawfjf", "afl"));
         dao.close();
@@ -30,8 +30,8 @@ public class PersistentCustomTest extends BaseTest {
         dao.upsert(entry("a", "b"));
         dao.upsert(entry("bKey!", "VALUE"));
         dao.upsert(entry("ccadcacwkka", "d"));
-        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("ergafe", "faw54fa5w4fw35a"));
+        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("fff", "v1"));
         dao.upsert(entry("nawfjf", "afl"));
         dao.close();
@@ -61,8 +61,8 @@ public class PersistentCustomTest extends BaseTest {
         dao.upsert(entry("afakfjwakjf", "awfawffw"));
         dao.upsert(entry("bbbfawjoawwfa", "kfkaafiwjkwfk"));
         dao.upsert(entry("ccadcacwkka", "d"));
-        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("ergafe", "faw54fa5w4fw35a"));
+        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("fff", "v1"));
         dao.upsert(entry("nawfjf", "afl"));
         dao.close();
@@ -77,8 +77,8 @@ public class PersistentCustomTest extends BaseTest {
         dao.upsert(entry("afakfjwakjf", "awfawffw"));
         dao.upsert(entry("bbbfawjoawwfa", "kfkaafiwjkwfk"));
         dao.upsert(entry("ccadcacwkka", "d"));
-        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("ergafe", "faw54fa5w4fw35a"));
+        dao.upsert(entry("ewakfakorw", "1"));
         dao.upsert(entry("fff", "v1"));
         dao.upsert(entry("nawfjf", "afl"));
         dao.close();
