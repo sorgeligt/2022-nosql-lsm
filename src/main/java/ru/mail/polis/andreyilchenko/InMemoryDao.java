@@ -47,10 +47,11 @@ public class InMemoryDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         }
         try (RandomAccessFile reader = new RandomAccessFile(pathToData.toFile(), "rw");
              FileChannel channel = reader.getChannel()) {
-
-            ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferSize);
-            bufferToWrite.putChar(DATA_SEPARATOR); // separator at the beginning of the file
+            reader.write(DATA_SEPARATOR); // separator at the beginning of the file
             for (BaseEntry<ByteBuffer> entry : entries.values()) {
+                int keyLen = entry.key().remaining();
+                int valueLen = entry.value().remaining();
+                ByteBuffer bufferToWrite = ByteBuffer.allocate(keyLen + valueLen + 4);
                 bufferToWrite.put(entry.key())
                         .putChar(KEY_VALUE_SEPARATOR)
                         .put(entry.value())
