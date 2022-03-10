@@ -26,14 +26,15 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     private final boolean dataExistFlag;
     private final int allocateBufferWriteSize;
 
+    public PersistentDao(Config config) {
+        this(config, DEFAULT_ALLOCATE_BUFFER_WRITE_SIZE);
+    }
+
     public PersistentDao(Config config, int allocateBufferWriteSize) {
         this.allocateBufferWriteSize = allocateBufferWriteSize;
         pathToData = config.basePath().resolve(DATA_FILE);
         pathToOffsets = config.basePath().resolve(OFFSETS_FILE);
         dataExistFlag = Files.exists(pathToData) && Files.exists(pathToOffsets);
-    }
-    public PersistentDao(Config config) {
-        this(config, DEFAULT_ALLOCATE_BUFFER_WRITE_SIZE);
     }
 
     @Override
@@ -59,7 +60,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             for (BaseEntry<ByteBuffer> entry : entries.values()) {
                 int keyLen = entry.key().remaining();
                 int valueLen = entry.value().remaining();
-                if (bufferToWrite.remaining() + keyLen + valueLen >= allocateBufferWriteSize){
+                if (bufferToWrite.remaining() + keyLen + valueLen >= allocateBufferWriteSize) {
                     dataChannel.write(bufferToWrite.flip());
                     bufferToWrite.clear();
                 }
