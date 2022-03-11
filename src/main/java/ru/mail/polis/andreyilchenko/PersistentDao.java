@@ -123,9 +123,9 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
                     value.flip();
                     return new BaseEntry<>(key, value);
                 } else if (compareResult > 0) {
-                    endIndex = midIndex;
+                    endIndex = midIndex - 1;
                 } else {
-                    startIndex = midIndex;
+                    startIndex = midIndex + 1;
                 }
             }
         }
