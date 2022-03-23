@@ -23,7 +23,6 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
         clearQueue(queue.iterator());
         while (!queue.isEmpty() && queueElemPeek().value() == null) {
             PeekingPriorityIterator poll = queue.poll();
-            removeEquals(poll.peek());
             updatePeekIterator(Objects.requireNonNull(poll));
         }
         return !queue.isEmpty();
