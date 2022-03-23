@@ -29,7 +29,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     private final Path pathToData;
     private final Path pathToOffsets;
     private final int allocateBufferWriteSize;
-    List<Path> paths;
+    private final List<Path> paths;
 
     public PersistentDao(Config config) throws IOException {
         this(config, DEFAULT_ALLOCATE_BUFFER_WRITE_SIZE);
