@@ -40,6 +40,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         paths = pathStream
                 .filter(Files::isRegularFile)
                 .map(x -> Path.of(x.toString().replaceFirst("[.][^.]+$", "")))
+                .sorted()
                 .toList();
         pathStream.close();
         pathToData = configPath.resolve(paths.size() + DATA_EXTENSION);
