@@ -78,8 +78,8 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
                 return y.hasNext() ? 1 : -1;
             }
             int compareKeyResult = x.peek().key().compareTo(y.peek().key());
-            return compareKeyResult == 0 ?
-                    Integer.compare(x.getPriority(), y.getPriority()) : compareKeyResult;
+            return compareKeyResult == 0
+                    ? Integer.compare(x.getPriority(), y.getPriority()) : compareKeyResult;
         };
     }
 }
