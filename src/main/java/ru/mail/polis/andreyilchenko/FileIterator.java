@@ -11,22 +11,24 @@ import java.nio.file.Path;
 import java.util.Iterator;
 
 public class FileIterator implements Iterator<BaseEntry<ByteBuffer>> {
+    private static final int NULL_OFFSET = -1;
     private final Path dataPath;
     private final Path offsetsPath;
-    private final ByteBuffer to;
+    private final ByteBuffer rightDataBoundary;
     private final long maxOffsetsFilePointer;
     private BaseEntry<ByteBuffer> prevElem;
     private long offsetPointer;
-    private boolean flagNotNext;
+    private boolean hasNotNext;
 
-    public FileIterator(Path dataPath, Path offsetsPath, long startOffset, long maxOffsetsFilePointer, ByteBuffer to) {
+    public FileIterator(Path dataPath, Path offsetsPath, long startOffset,
+                        long offsetsSize, ByteBuffer to) throws IOException {
         this.dataPath = dataPath;
         this.offsetsPath = offsetsPath;
         this.offsetPointer = startOffset;
-        this.maxOffsetsFilePointer = maxOffsetsFilePointer;
-        this.to = to;
-        if (startOffset >= maxOffsetsFilePointer) {
-            flagNotNext = true;
+        this.maxOffsetsFilePointer = offsetsSize;
+        this.rightDataBoundary = to;
+        if (startOffset >= offsetsSize) {
+            hasNotNext = true;
             return;
         }
         try (
@@ -36,33 +38,27 @@ public class FileIterator implements Iterator<BaseEntry<ByteBuffer>> {
         ) {
             boolean isNull = false;
             offsetsReader.seek(offsetPointer);
-            offsetPointer += 8;
+            moveOffsetsPointer();
             int keyStartOffset = offsetsReader.readInt();
             int valueStartOffset = offsetsReader.readInt();
             int valueEndOffset = offsetsReader.readInt();
-            if (valueStartOffset == -1) {
+            if (valueStartOffset == NULL_OFFSET) {
                 valueStartOffset = valueEndOffset;
                 isNull = true;
             }
-            ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
-            dataChannel.read(probableKey, keyStartOffset);
-            probableKey.flip();
-            ByteBuffer value = ByteBuffer.allocate(valueEndOffset - valueStartOffset);
-            dataChannel.read(value, valueStartOffset);
-            value.flip();
+            ByteBuffer probableKey = readByteBuffer(valueStartOffset, keyStartOffset, dataChannel);
+            ByteBuffer value = readByteBuffer(valueEndOffset, valueStartOffset, dataChannel);
             prevElem = new BaseEntry<>(probableKey, isNull ? null : value);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
         }
     }
 
     @Override
     public boolean hasNext() {
-        boolean b = true;
-        if (to != null && !flagNotNext) {
-            b = prevElem.key().compareTo(to) < 0;
+        boolean boundaryFlag = true;
+        if (rightDataBoundary != null && !hasNotNext) {
+            boundaryFlag = prevElem.key().compareTo(rightDataBoundary) < 0;
         }
-        return !flagNotNext && b && maxOffsetsFilePointer >= offsetPointer;
+        return !hasNotNext && boundaryFlag && maxOffsetsFilePointer >= offsetPointer;
     }
 
     @Override
@@ -73,30 +69,37 @@ public class FileIterator implements Iterator<BaseEntry<ByteBuffer>> {
                 RandomAccessFile offsetsReader = new RandomAccessFile(offsetsPath.toFile(), "r")
         ) {
             if (maxOffsetsFilePointer <= offsetPointer + 4) {
-                offsetPointer += 8;
+                moveOffsetsPointer();
                 return prevElem;
             }
-            boolean isNull = false;
             offsetsReader.seek(offsetPointer);
-            offsetPointer += 8;
+            moveOffsetsPointer();
+            boolean isValueNull = false;
             int keyStartOffset = offsetsReader.readInt();
             int valueStartOffset = offsetsReader.readInt();
             int valueEndOffset = offsetsReader.readInt();
-            if (valueStartOffset == -1) {
+            if (valueStartOffset == NULL_OFFSET) {
+                isValueNull = true;
                 valueStartOffset = valueEndOffset;
-                isNull = true;
             }
-            ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
-            dataChannel.read(probableKey, keyStartOffset);
-            probableKey.flip();
-            ByteBuffer value = ByteBuffer.allocate(valueEndOffset - valueStartOffset);
-            dataChannel.read(value, valueStartOffset);
-            value.flip();
+            ByteBuffer probableKey = readByteBuffer(valueStartOffset, keyStartOffset, dataChannel);
+            ByteBuffer value = readByteBuffer(valueEndOffset, valueStartOffset, dataChannel);
             BaseEntry<ByteBuffer> returnElem = prevElem;
-            prevElem = new BaseEntry<>(probableKey, isNull ? null : value);
+            prevElem = new BaseEntry<>(probableKey, isValueNull ? null : value);
             return returnElem;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    private void moveOffsetsPointer() {
+        offsetPointer += 8;
+    }
+
+    private ByteBuffer readByteBuffer(int valueStartOffset, int keyStartOffset, FileChannel dataChannel) throws IOException {
+        ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
+        dataChannel.read(probableKey, keyStartOffset);
+        probableKey.flip();
+        return probableKey;
     }
 }

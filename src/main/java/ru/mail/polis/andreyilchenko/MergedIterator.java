@@ -3,6 +3,7 @@ package ru.mail.polis.andreyilchenko;
 import ru.mail.polis.BaseEntry;
 
 import java.nio.ByteBuffer;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -11,15 +12,9 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 
 public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
-    private final Queue<PriorityIterator> queue = new PriorityQueue<>((x, y) -> {
-        if (!x.hasNext() || !y.hasNext()) {
-            return y.hasNext() ? 1 : -1;
-        }
-        int compareKeyResult = x.peek().key().compareTo(y.peek().key());
-        return compareKeyResult == 0 ? Integer.compare(x.getPriority(), y.getPriority()) : compareKeyResult;
-    });
+    private final Queue<PeekingPriorityIterator> queue = new PriorityQueue<>(priorityComparator());
 
-    public MergedIterator(List<PriorityIterator> iteratorList) {
+    public MergedIterator(List<PeekingPriorityIterator> iteratorList) {
         queue.addAll(iteratorList);
     }
 
@@ -42,27 +37,37 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
         return nextElem.value() == null ? null : nextElem;
     }
 
-    private BaseEntry<ByteBuffer> updatePeekIterator(PriorityIterator nextIter) {
+    private Comparator<PeekingPriorityIterator> priorityComparator() {
+        return (x, y) -> {
+            if (!x.hasNext() || !y.hasNext()) {
+                return y.hasNext() ? 1 : -1;
+            }
+            int compareKeyResult = x.peek().key().compareTo(y.peek().key());
+            return compareKeyResult == 0 ? Integer.compare(x.getPriority(), y.getPriority()) : compareKeyResult;
+        };
+    }
+
+    private BaseEntry<ByteBuffer> updatePeekIterator(PeekingPriorityIterator nextIter) {
         BaseEntry<ByteBuffer> nextEntry = nextIter.next();
         addInQueueIfHasNext(nextIter);
         while (!queue.isEmpty() && nextEntry.key().equals(doublePeekQueue().key())) {
-            PriorityIterator peek = queue.poll();
-            peek.next();
-            addInQueueIfHasNext(peek);
+            PeekingPriorityIterator iterator = queue.poll();
+            iterator.next();
+            addInQueueIfHasNext(iterator);
         }
         return nextEntry;
     }
 
-    private void addInQueueIfHasNext(PriorityIterator peek) {
+    private void addInQueueIfHasNext(PeekingPriorityIterator peek) {
         if (peek.hasNext()) {
             queue.add(peek);
         }
     }
 
-    private void clearQueue(Iterator<PriorityIterator> queueIter) {
-        while (queueIter.hasNext()) {
-            if (!queueIter.next().hasNext()) {
-                queueIter.remove();
+    private void clearQueue(Iterator<PeekingPriorityIterator> queueIterator) {
+        while (queueIterator.hasNext()) {
+            if (!queueIterator.next().hasNext()) {
+                queueIterator.remove();
             }
         }
     }

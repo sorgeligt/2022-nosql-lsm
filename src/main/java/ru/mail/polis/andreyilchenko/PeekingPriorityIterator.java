@@ -6,12 +6,12 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-class PriorityIterator implements Iterator<BaseEntry<ByteBuffer>> {
+class PeekingPriorityIterator implements Iterator<BaseEntry<ByteBuffer>> {
     BaseEntry<ByteBuffer> nextElem;
     Iterator<BaseEntry<ByteBuffer>> defaultIterator;
     private final int priority;
 
-    public PriorityIterator(Iterator<BaseEntry<ByteBuffer>> iterator, int priority) {
+    public PeekingPriorityIterator(Iterator<BaseEntry<ByteBuffer>> iterator, int priority) {
         if (iterator.hasNext()) {
             this.nextElem = iterator.next();
         }
