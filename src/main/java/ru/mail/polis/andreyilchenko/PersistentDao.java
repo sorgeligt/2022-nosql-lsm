@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.stream.Stream;
 
 public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     private static final String DATA_EXTENSION = ".d";
@@ -35,10 +36,12 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     public PersistentDao(Config config, int allocateBufferWriteSize) throws IOException {
         this.allocateBufferWriteSize = allocateBufferWriteSize;
         Path configPath = config.basePath();
-        paths = Files.walk(configPath)
+        Stream<Path> pathStream = Files.walk(configPath);
+        paths = pathStream
                 .filter(Files::isRegularFile)
                 .map(x -> Path.of(x.toString().replaceFirst("[.][^.]+$", "")))
                 .toList();
+        pathStream.close();
         pathToData = configPath.resolve(paths.size() + DATA_EXTENSION);
         pathToOffsets = configPath.resolve(paths.size() + OFFSETS_EXTENSION);
     }
@@ -154,7 +157,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             } else {
                 buf.putInt(-1);
             }
-            pos += entry.value() != null ? entry.value().remaining() : 0;
+            pos += entry.value() == null ? 0 : entry.value().remaining();
 
         }
         buf.putInt(pos);
@@ -169,12 +172,12 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferWriteSize);
             for (BaseEntry<ByteBuffer> entry : entries.values()) {
                 int keyLen = entry.key().remaining();
-                int valueLen = entry.value() != null ? entry.value().remaining() : 0;
+                int valueLen = entry.value() == null ? 0 : entry.value().remaining();
                 if (bufferToWrite.remaining() + keyLen + valueLen >= allocateBufferWriteSize) {
                     dataChannel.write(bufferToWrite.flip());
                     bufferToWrite.clear();
                 }
-                bufferToWrite.put(entry.key()).put(entry.value() != null ? entry.value() : ByteBuffer.allocate(0));
+                bufferToWrite.put(entry.key()).put(entry.value() == null ? ByteBuffer.allocate(0) : entry.value());
             }
             dataChannel.write(bufferToWrite.flip());
         }

@@ -17,7 +17,7 @@ public class FileIterator implements Iterator<BaseEntry<ByteBuffer>> {
     private final long maxOffsetsFilePointer;
     private BaseEntry<ByteBuffer> prevElem;
     private long offsetPointer;
-    private boolean flagNotNext = false;
+    private boolean flagNotNext;
 
     public FileIterator(Path dataPath, Path offsetsPath, long startOffset, long maxOffsetsFilePointer, ByteBuffer to) {
         this.dataPath = dataPath;

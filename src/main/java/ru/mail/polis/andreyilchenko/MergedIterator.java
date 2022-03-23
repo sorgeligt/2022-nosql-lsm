@@ -3,7 +3,12 @@ package ru.mail.polis.andreyilchenko;
 import ru.mail.polis.BaseEntry;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.PriorityQueue;
+import java.util.Queue;
 
 public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
     private final Queue<PriorityIterator> queue = new PriorityQueue<>((x, y) -> {
@@ -34,7 +39,7 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
         }
         BaseEntry<ByteBuffer> nextElem = !queue.isEmpty()
                 ? updatePeekIterator(queue.poll()) : queue.peek().next();
-        return nextElem.value() != null ? nextElem : null;
+        return nextElem.value() == null ? null : nextElem;
     }
 
     private BaseEntry<ByteBuffer> updatePeekIterator(PriorityIterator nextIter) {

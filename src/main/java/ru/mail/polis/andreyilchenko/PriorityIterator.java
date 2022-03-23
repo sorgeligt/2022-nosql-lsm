@@ -6,7 +6,6 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-
 class PriorityIterator implements Iterator<BaseEntry<ByteBuffer>> {
     BaseEntry<ByteBuffer> nextElem;
     Iterator<BaseEntry<ByteBuffer>> defaultIterator;
