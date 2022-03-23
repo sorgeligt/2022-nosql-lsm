@@ -21,8 +21,10 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
     @Override
     public boolean hasNext() {
         clearQueue(queue.iterator());
-        while (!queue.isEmpty() && doublePeekQueue().value() == null) {
-            updatePeekIterator(Objects.requireNonNull(queue.poll()));
+        while (!queue.isEmpty() && queueElemPeek().value() == null) {
+            PeekingPriorityIterator poll = queue.poll();
+            removeEquals(poll.peek());
+            updatePeekIterator(Objects.requireNonNull(poll));
         }
         return !queue.isEmpty();
     }
@@ -37,25 +39,19 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
         return nextElem.value() == null ? null : nextElem;
     }
 
-    private Comparator<PeekingPriorityIterator> priorityComparator() {
-        return (x, y) -> {
-            if (!x.hasNext() || !y.hasNext()) {
-                return y.hasNext() ? 1 : -1;
-            }
-            int compareKeyResult = x.peek().key().compareTo(y.peek().key());
-            return compareKeyResult == 0 ? Integer.compare(x.getPriority(), y.getPriority()) : compareKeyResult;
-        };
-    }
-
     private BaseEntry<ByteBuffer> updatePeekIterator(PeekingPriorityIterator nextIter) {
         BaseEntry<ByteBuffer> nextEntry = nextIter.next();
+        removeEquals(nextEntry);
         addInQueueIfHasNext(nextIter);
-        while (!queue.isEmpty() && nextEntry.key().equals(doublePeekQueue().key())) {
+        return nextEntry;
+    }
+
+    private void removeEquals(BaseEntry<ByteBuffer> nextEntry) {
+        while (!queue.isEmpty() && nextEntry.key().equals(queueElemPeek().key())) {
             PeekingPriorityIterator iterator = queue.poll();
             iterator.next();
             addInQueueIfHasNext(iterator);
         }
-        return nextEntry;
     }
 
     private void addInQueueIfHasNext(PeekingPriorityIterator peek) {
@@ -72,8 +68,19 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
         }
     }
 
-    private BaseEntry<ByteBuffer> doublePeekQueue() {
+    private BaseEntry<ByteBuffer> queueElemPeek() {
         return queue.peek().peek();
+    }
+
+    private Comparator<PeekingPriorityIterator> priorityComparator() {
+        return (x, y) -> {
+            if (!x.hasNext() || !y.hasNext()) {
+                return y.hasNext() ? 1 : -1;
+            }
+            int compareKeyResult = x.peek().key().compareTo(y.peek().key());
+            return compareKeyResult == 0 ?
+                    Integer.compare(x.getPriority(), y.getPriority()) : compareKeyResult;
+        };
     }
 }
 
