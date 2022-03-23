@@ -96,9 +96,9 @@ public class FileIterator implements Iterator<BaseEntry<ByteBuffer>> {
         offsetPointer += 8;
     }
 
-    private ByteBuffer readByteBuffer(int valueStartOffset, int keyStartOffset, FileChannel dataChannel) throws IOException {
-        ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
-        dataChannel.read(probableKey, keyStartOffset);
+    private ByteBuffer readByteBuffer(int start, int end, FileChannel dataChannel) throws IOException {
+        ByteBuffer probableKey = ByteBuffer.allocate(start - end);
+        dataChannel.read(probableKey, end);
         probableKey.flip();
         return probableKey;
     }
