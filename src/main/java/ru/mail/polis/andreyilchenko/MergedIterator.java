@@ -37,8 +37,8 @@ public class MergedIterator implements Iterator<BaseEntry<ByteBuffer>> {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
-        BaseEntry<ByteBuffer> nextElem = !queue.isEmpty()
-                ? updatePeekIterator(queue.poll()) : queue.peek().next();
+        BaseEntry<ByteBuffer> nextElem = queue.isEmpty()
+                ? queue.peek().next() : updatePeekIterator(queue.poll());
         return nextElem.value() == null ? null : nextElem;
     }
 

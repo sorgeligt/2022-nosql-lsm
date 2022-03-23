@@ -152,10 +152,10 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
         for (BaseEntry<ByteBuffer> entry : entries.values()) {
             buf.putInt(pos);
             pos += entry.key().remaining();
-            if (entry.value() != null) {
-                buf.putInt(pos);
-            } else {
+            if (entry.value() == null) {
                 buf.putInt(-1);
+            } else {
+                buf.putInt(pos);
             }
             pos += entry.value() == null ? 0 : entry.value().remaining();
 
