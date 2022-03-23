@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.stream.Stream;
 
 public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
+    private static final int NULL_OFFSET = -1;
     private static final String DATA_EXTENSION = ".d";
     private static final String OFFSETS_EXTENSION = ".o";
     private static final int DEFAULT_ALLOCATE_BUFFER_WRITE_SIZE = 0xA00;
@@ -94,7 +95,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             int keyStartOffset = offsetsReader.readInt();
             int valueStartOffset = offsetsReader.readInt();
             int valueEndOffset = offsetsReader.readInt();
-            if (valueStartOffset == -1) {
+            if (valueStartOffset == NULL_OFFSET) {
                 valueStartOffset = valueEndOffset;
             }
             ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
@@ -114,7 +115,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
                 keyStartOffset = offsetsReader.readInt();
                 valueStartOffset = offsetsReader.readInt();
                 valueEndOffset = offsetsReader.readInt();
-                if (valueStartOffset == -1) {
+                if (valueStartOffset == NULL_OFFSET) {
                     valueStartOffset = valueEndOffset;
                 }
                 probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
@@ -154,7 +155,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             buf.putInt(pos);
             pos += entry.key().remaining();
             if (entry.value() == null) {
-                buf.putInt(-1);
+                buf.putInt(NULL_OFFSET);
             } else {
                 buf.putInt(pos);
             }
@@ -219,7 +220,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
                 int keyStartOffset = offsetsReader.readInt();
                 int valueStartOffset = offsetsReader.readInt();
                 int valueEndOffset = offsetsReader.readInt();
-                if (valueStartOffset == -1) {
+                if (valueStartOffset == NULL_OFFSET) {
                     valueStartOffset = valueEndOffset;
                     isNull = true;
                 }
