@@ -11,41 +11,151 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
-    private static final String DATA_FILE = "data.txt";
-    private static final String OFFSETS_FILE = "offsets.txt";
+    private static final String DATA_EXTENSION = ".d";
+    private static final String OFFSETS_EXTENSION = ".o";
     private static final int DEFAULT_ALLOCATE_BUFFER_WRITE_SIZE = 0xA00;
 
     private final ConcurrentNavigableMap<ByteBuffer, BaseEntry<ByteBuffer>> entries = new ConcurrentSkipListMap<>();
     private final Path pathToData;
     private final Path pathToOffsets;
-    private final boolean dataExistFlag;
     private final int allocateBufferWriteSize;
+    List<Path> paths;
 
-    public PersistentDao(Config config) {
+    public PersistentDao(Config config) throws IOException {
         this(config, DEFAULT_ALLOCATE_BUFFER_WRITE_SIZE);
     }
 
-    public PersistentDao(Config config, int allocateBufferWriteSize) {
+    public PersistentDao(Config config, int allocateBufferWriteSize) throws IOException {
         this.allocateBufferWriteSize = allocateBufferWriteSize;
-        pathToData = config.basePath().resolve(DATA_FILE);
-        pathToOffsets = config.basePath().resolve(OFFSETS_FILE);
-        dataExistFlag = Files.exists(pathToData) && Files.exists(pathToOffsets);
+        Path configPath = config.basePath();
+        paths = Files.walk(configPath)
+                .filter(Files::isRegularFile)
+                .map(x -> Path.of(x.toString().replaceFirst("[.][^.]+$", "")))
+                .toList();
+        pathToData = configPath.resolve(paths.size() + DATA_EXTENSION);
+        pathToOffsets = configPath.resolve(paths.size() + OFFSETS_EXTENSION);
     }
 
     @Override
-    public void flush() throws IOException {
+    public Iterator<BaseEntry<ByteBuffer>> get(ByteBuffer from, ByteBuffer to) throws IOException {
+        List<PriorityIterator> iterators = new ArrayList<>();
+        iterators.add(new PriorityIterator(inMemoryGet(from, to), Integer.MIN_VALUE));
+        for (int i = 0; i < paths.size(); i += 2) {
+            iterators.add(
+                    new PriorityIterator(
+                            new FileIterator(
+                                    Path.of(paths.get(i) + ".d"),
+                                    Path.of(paths.get(i) + ".o"),
+                                    from == null ? 0 : findPositionInFile(paths.get(i), from),
+                                    Path.of(paths.get(i) + ".o").toFile().length(),
+                                    to),
+                            -Integer.parseInt(paths.get(i).getFileName().toString())
+                    )
+            );
+        }
+        return new MergedIterator(iterators);
+    }
+
+    private Iterator<BaseEntry<ByteBuffer>> inMemoryGet(ByteBuffer from, ByteBuffer to) {
+        if (to == null && from == null) {
+            return entries.values().iterator();
+        }
+        if (to == null) {
+            return entries.tailMap(from).values().iterator();
+        }
+        if (from == null) {
+            return entries.headMap(to).values().iterator();
+        }
+        return entries.subMap(from, to).values().iterator();
+    }
+
+    private long findPositionInFile(Path pathForFiles, ByteBuffer key) throws IOException {
+        Path pathDat = Path.of(pathForFiles + ".d");
+        Path pathOffset = Path.of(pathForFiles + ".o");
+        long startIndex;
+        long endIndex;
+        try (
+                RandomAccessFile dataReader = new RandomAccessFile(pathDat.toFile(), "r");
+                FileChannel dataChannel = dataReader.getChannel();
+                RandomAccessFile offsetsReader = new RandomAccessFile(pathOffset.toFile(), "r")
+        ) {
+            offsetsReader.seek(offsetsReader.length() - 12);
+            int keyStartOffset = offsetsReader.readInt();
+            int valueStartOffset = offsetsReader.readInt();
+            int valueEndOffset = offsetsReader.readInt();
+            if (valueStartOffset == -1) {
+                valueStartOffset = valueEndOffset;
+            }
+            ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
+            dataChannel.read(probableKey, keyStartOffset);
+            probableKey.flip();
+            if (key.compareTo(probableKey) > 0) {
+                return Integer.MAX_VALUE;
+            }
+
+            startIndex = 0;
+            endIndex = (offsetsReader.length() - 4) / 8;
+            long midIndex;
+
+            while (startIndex <= endIndex) {
+                midIndex = ((endIndex + startIndex) / 2);
+                offsetsReader.seek(midIndex * 8);
+                keyStartOffset = offsetsReader.readInt();
+                valueStartOffset = offsetsReader.readInt();
+                valueEndOffset = offsetsReader.readInt();
+                if (valueStartOffset == -1) {
+                    valueStartOffset = valueEndOffset;
+                }
+                probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
+                dataChannel.read(probableKey, keyStartOffset);
+                probableKey.flip();
+                int compareResult = probableKey.compareTo(key);
+                if (compareResult == 0) {
+                    ByteBuffer value = ByteBuffer.allocate(valueEndOffset - valueStartOffset);
+                    dataChannel.read(value, valueStartOffset);
+                    value.flip();
+                    return midIndex * 8;
+                } else if (compareResult > 0) {
+                    endIndex = midIndex - 1;
+                } else {
+                    startIndex = midIndex + 1;
+                }
+            }
+        }
+        return (endIndex + 1) * 8;
+    }
+
+    @Override
+    public void upsert(BaseEntry<ByteBuffer> entry) {
+        entries.put(entry.key(), entry);
+    }
+
+    @Override
+    public void flush() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void close() throws IOException {
         ByteBuffer buf = ByteBuffer.allocate(2 * Integer.BYTES * entries.size() + Integer.BYTES);
         int pos = 0;
         for (BaseEntry<ByteBuffer> entry : entries.values()) {
             buf.putInt(pos);
             pos += entry.key().remaining();
-            buf.putInt(pos);
-            pos += entry.value().remaining();
+            if (entry.value() != null) {
+                buf.putInt(pos);
+            } else {
+                buf.putInt(-1);
+            }
+            pos += entry.value() != null ? entry.value().remaining() : 0;
+
         }
         buf.putInt(pos);
         buf.flip();
@@ -59,12 +169,12 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
             ByteBuffer bufferToWrite = ByteBuffer.allocate(allocateBufferWriteSize);
             for (BaseEntry<ByteBuffer> entry : entries.values()) {
                 int keyLen = entry.key().remaining();
-                int valueLen = entry.value().remaining();
+                int valueLen = entry.value() != null ? entry.value().remaining() : 0;
                 if (bufferToWrite.remaining() + keyLen + valueLen >= allocateBufferWriteSize) {
                     dataChannel.write(bufferToWrite.flip());
                     bufferToWrite.clear();
                 }
-                bufferToWrite.put(entry.key()).put(entry.value());
+                bufferToWrite.put(entry.key()).put(entry.value() != null ? entry.value() : ByteBuffer.allocate(0));
             }
             dataChannel.write(bufferToWrite.flip());
         }
@@ -73,46 +183,42 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
     @Override
     public BaseEntry<ByteBuffer> get(ByteBuffer key) throws IOException {
         BaseEntry<ByteBuffer> entry = entries.get(key);
-        if (entry == null && dataExistFlag) {
-            return findInFile(key);
+        if (entry == null) {
+
+            for (int i = paths.size() - 1; i > 0; i -= 2) {
+                BaseEntry<ByteBuffer> inFile = findInFile(paths.get(i), key);
+                if (inFile != null) {
+                    return inFile.value() == null ? null : inFile;
+                }
+            }
+            return null;
         }
-        return entry;
+        return entry.value() == null ? null : entry;
     }
 
-    @Override
-    public void upsert(BaseEntry<ByteBuffer> entry) {
-        entries.put(entry.key(), entry);
-    }
-
-    @Override
-    public Iterator<BaseEntry<ByteBuffer>> get(ByteBuffer from, ByteBuffer to) {
-        if (to == null && from == null) {
-            return entries.values().iterator();
-        }
-        if (to == null) {
-            return entries.tailMap(from).values().iterator();
-        }
-        if (from == null) {
-            return entries.headMap(to).values().iterator();
-        }
-        return entries.subMap(from, to).values().iterator();
-    }
-
-    private BaseEntry<ByteBuffer> findInFile(ByteBuffer key) throws IOException {
+    private BaseEntry<ByteBuffer> findInFile(Path pathForFiles, ByteBuffer key) throws IOException {
+        Path pathDat = Path.of(pathForFiles + ".d");
+        Path pathOffset = Path.of(pathForFiles + ".o");
         try (
-                RandomAccessFile dataReader = new RandomAccessFile(pathToData.toFile(), "r");
+                RandomAccessFile dataReader = new RandomAccessFile(pathDat.toFile(), "r");
                 FileChannel dataChannel = dataReader.getChannel();
-                RandomAccessFile offsetsReader = new RandomAccessFile(pathToOffsets.toFile(), "r")
+                RandomAccessFile offsetsReader = new RandomAccessFile(pathOffset.toFile(), "r")
         ) {
             long startIndex = 0;
-            long endIndex = (offsetsReader.length() - 4) / 8;
+            long endIndex = (offsetsReader.length() - 8) / 8;
             long midIndex;
+
             while (startIndex <= endIndex) {
+                boolean isNull = false;
                 midIndex = ((endIndex + startIndex) / 2);
                 offsetsReader.seek(midIndex * 8);
                 int keyStartOffset = offsetsReader.readInt();
                 int valueStartOffset = offsetsReader.readInt();
                 int valueEndOffset = offsetsReader.readInt();
+                if (valueStartOffset == -1) {
+                    valueStartOffset = valueEndOffset;
+                    isNull = true;
+                }
                 ByteBuffer probableKey = ByteBuffer.allocate(valueStartOffset - keyStartOffset);
                 dataChannel.read(probableKey, keyStartOffset);
                 probableKey.flip();
@@ -121,7 +227,7 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
                     ByteBuffer value = ByteBuffer.allocate(valueEndOffset - valueStartOffset);
                     dataChannel.read(value, valueStartOffset);
                     value.flip();
-                    return new BaseEntry<>(key, value);
+                    return new BaseEntry<>(key, isNull ? null : value);
                 } else if (compareResult > 0) {
                     endIndex = midIndex - 1;
                 } else {
