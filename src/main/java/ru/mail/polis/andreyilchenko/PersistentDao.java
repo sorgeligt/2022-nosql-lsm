@@ -96,6 +96,9 @@ public class PersistentDao implements Dao<ByteBuffer, BaseEntry<ByteBuffer>> {
 
     @Override
     public void close() throws IOException {
+        if (entries.isEmpty()) {
+            return;
+        }
         ByteBuffer buf = ByteBuffer.allocate(2 * Integer.BYTES * entries.size() + Integer.BYTES);
         int pos = 0;
         for (BaseEntry<ByteBuffer> entry : entries.values()) {
