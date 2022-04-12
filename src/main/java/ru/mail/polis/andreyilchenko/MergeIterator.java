@@ -1,19 +1,24 @@
 package ru.mail.polis.andreyilchenko;
 
-import java.util.*;
+
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.PriorityQueue;
 
 public class MergeIterator<E> implements Iterator<E> {
 
-    private final PriorityQueue<IndexPeekIterator<E>> iterators;
+    private final PriorityQueue<IteratorWrapper<E>> iterators;
     private final Comparator<E> comparator;
 
-    private MergeIterator(PriorityQueue<IndexPeekIterator<E>> iterators, Comparator<E> comparator) {
+    private MergeIterator(PriorityQueue<IteratorWrapper<E>> iterators, Comparator<E> comparator) {
         this.iterators = iterators;
         this.comparator = comparator;
     }
 
     // iterators are strictly ordered by comparator (previous element always < next element)
-    public static <E> Iterator<E> of(List<IndexPeekIterator<E>> iterators, Comparator<E> comparator) {
+    public static <E> Iterator<E> of(List<Iterator<E>> iterators, Comparator<E> comparator) {
         switch (iterators.size()) {
             case 0:
                 return Collections.emptyIterator();
@@ -23,17 +28,19 @@ public class MergeIterator<E> implements Iterator<E> {
                 // Just go on
         }
 
-        PriorityQueue<IndexPeekIterator<E>> queue = new PriorityQueue<>(iterators.size(), (o1, o2) -> {
+        PriorityQueue<MergeIterator.IteratorWrapper<E>> queue = new PriorityQueue<>(iterators.size(), (o1, o2) -> {
             int result = comparator.compare(o1.peek(), o2.peek());
             if (result != 0) {
                 return result;
             }
-            return Integer.compare(o1.index(), o2.index());
+            // reverse order
+            return Integer.compare(o2.index, o1.index);
         });
 
-        for (IndexPeekIterator<E> iterator : iterators) {
+        int index = 0;
+        for (Iterator<E> iterator : iterators) {
             if (iterator.hasNext()) {
-                queue.add(iterator);
+                queue.add(new IteratorWrapper<>(index++, iterator));
             }
         }
 
@@ -47,11 +54,11 @@ public class MergeIterator<E> implements Iterator<E> {
 
     @Override
     public E next() {
-        IndexPeekIterator<E> iterator = iterators.remove();
+        IteratorWrapper<E> iterator = iterators.remove();
         E next = iterator.next();
 
         while (!iterators.isEmpty()) {
-            IndexPeekIterator<E> candidate = iterators.peek();
+            IteratorWrapper<E> candidate = iterators.peek();
             if (comparator.compare(next, candidate.peek()) != 0) {
                 break;
             }
@@ -69,4 +76,16 @@ public class MergeIterator<E> implements Iterator<E> {
 
         return next;
     }
+
+    private static class IteratorWrapper<E> extends PeekIterator<E> {
+
+        final int index;
+
+        public IteratorWrapper(int index, Iterator<E> delegate) {
+            super(delegate);
+            this.index = index;
+        }
+
+    }
+
 }

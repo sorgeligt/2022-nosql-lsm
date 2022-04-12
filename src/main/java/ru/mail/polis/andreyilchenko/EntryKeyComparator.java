@@ -1,5 +1,6 @@
 package ru.mail.polis.andreyilchenko;
 
+
 import jdk.incubator.foreign.MemorySegment;
 import ru.mail.polis.Entry;
 

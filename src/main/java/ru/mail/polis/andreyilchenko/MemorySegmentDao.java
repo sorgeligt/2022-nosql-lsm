@@ -1,5 +1,6 @@
 package ru.mail.polis.andreyilchenko;
 
+
 import jdk.incubator.foreign.MemorySegment;
 import ru.mail.polis.Config;
 import ru.mail.polis.Dao;
@@ -8,7 +9,6 @@ import ru.mail.polis.Entry;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -19,10 +19,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[]{});
 
-    private final ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> memory =
-            new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+    private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> memory = createMemoryStorage();
 
-    private final Storage storage;
+    // FIXME make it final
+    private Storage storage;
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final Config config;
@@ -34,48 +34,21 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        MemorySegment copyFrom = from;
-        if (from == null) {
-            copyFrom = VERY_FIRST_KEY;
-        }
-
-        List<IndexPeekIterator<Entry<MemorySegment>>> iterators = new ArrayList<>();
-        int index = 0;
-        iterators.add(new IndexPeekIterator<>(index++, getMemoryIterator(copyFrom, to)));
-        for (Iterator<Entry<MemorySegment>> iterator : storage.sstablesIterate(copyFrom, to)) {
-            iterators.add(new IndexPeekIterator<>(index++, iterator));
-        }
-        Iterator<Entry<MemorySegment>> iterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
-        return new Iterator<>() {
-            private Entry<MemorySegment> current;
-
-            @Override
-            public boolean hasNext() {
-                if (current != null) {
-                    return true;
-                }
-
-                while (iterator.hasNext()) {
-                    Entry<MemorySegment> entry = iterator.next();
-                    if (entry.value() != null) {
-                        current = entry;
-                        return true;
-                    }
-                }
-
-                return false;
+        lock.readLock().lock();
+        try {
+            if (from == null) {
+                from = VERY_FIRST_KEY;
             }
 
-            @Override
-            public Entry<MemorySegment> next() {
-                if (!hasNext()) {
-                    throw new NoSuchElementException();
-                }
-                Entry<MemorySegment> next = current;
-                current = null;
-                return next;
-            }
-        };
+            ArrayList<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(from, to);
+            iterators.add(getMemoryIterator(from, to));
+
+            Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
+
+            return new TombstoneFilteringIterator(mergeIterator);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     private Iterator<Entry<MemorySegment>> getMemoryIterator(MemorySegment from, MemorySegment to) {
@@ -85,6 +58,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (to == null) {
                 return memory.tailMap(from).values().iterator();
             }
+
             return memory.subMap(from, to).values().iterator();
         } finally {
             lock.readLock().unlock();
@@ -93,12 +67,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
-        Entry<MemorySegment> result = memory.get(key);
-        if (result == null) {
-            result = storage.get(key);
-        }
+        lock.readLock().lock();
+        try {
+            Entry<MemorySegment> result = memory.get(key);
+            if (result == null) {
+                result = storage.get(key);
+            }
 
-        return (result == null || result.value() == null) ? null : result;
+            return (result == null || result.isTombstone()) ? null : result;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
@@ -112,31 +91,93 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public void compact() throws IOException {
-
-        lock.writeLock();
+    public void flush() throws IOException {
+        lock.writeLock().lock();
         try {
-            Storage.compact(config, storage, get(null, null), memory);
+            if (storage.isClosed()) {
+                return;
+            }
+            if (memory.isEmpty()) {
+                return;
+            }
+            storage.close();
+            Storage.save(config, storage, memory.values());
+            memory = createMemoryStorage();
+            this.storage = Storage.load(config);
         } finally {
-            lock.writeLock().lock();
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public void compact() throws IOException {
+        lock.writeLock().lock();
+        try {
+            if (memory.isEmpty() && storage.isCompacted()) {
+                return;
+            }
+            Storage.compact(config, this::all);
+            storage.close();
+            memory = createMemoryStorage();
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
     @Override
     public void close() throws IOException {
-        if (storage.isClosed()) {
-            return;
-        }
-
-        storage.close();
         lock.writeLock().lock();
         try {
-            if (!storage.isClosed()) {
-                throw new IllegalStateException("Previous storage is open for write");
+            if (storage.isClosed()) {
+                return;
             }
-            Storage.save(config, memory.values());
+            storage.close();
+            if (memory.isEmpty()) {
+                return;
+            }
+            Storage.save(config, storage, memory.values());
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    private static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
+        private final Iterator<Entry<MemorySegment>> iterator;
+        private Entry<MemorySegment> current;
+
+        public TombstoneFilteringIterator(Iterator<Entry<MemorySegment>> iterator) {
+            this.iterator = iterator;
+        }
+
+        @Override
+        public boolean hasNext() {
+            if (current != null) {
+                return true;
+            }
+
+            while (iterator.hasNext()) {
+                Entry<MemorySegment> entry = iterator.next();
+                if (!entry.isTombstone()) {
+                    this.current = entry;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        @Override
+        public Entry<MemorySegment> next() {
+            if (!hasNext()) {
+                throw new NoSuchElementException("...");
+            }
+            Entry<MemorySegment> next = current;
+            current = null;
+            return next;
+        }
+    }
+
+    private static ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> createMemoryStorage() {
+        return new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
     }
 }

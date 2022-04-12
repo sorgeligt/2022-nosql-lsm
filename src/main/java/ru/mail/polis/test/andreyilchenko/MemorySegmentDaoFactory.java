@@ -9,7 +9,7 @@ import ru.mail.polis.test.DaoFactory;
 
 import java.io.IOException;
 
-@DaoFactory(stage = 4)
+@DaoFactory(stage = 4, week = 2)
 public class MemorySegmentDaoFactory implements DaoFactory.Factory<MemorySegment, Entry<MemorySegment>> {
 
     @Override

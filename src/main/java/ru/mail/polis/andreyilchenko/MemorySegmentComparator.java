@@ -18,11 +18,11 @@ public class MemorySegmentComparator implements Comparator<MemorySegment> {
         if (firstMismatch == -1) {
             return 0;
         }
-        if (firstMismatch == m2.byteSize()) {
-            return 1;
-        }
         if (firstMismatch == m1.byteSize()) {
             return -1;
+        }
+        if (firstMismatch == m2.byteSize()) {
+            return 1;
         }
         return Byte.compareUnsigned(
                 MemoryAccess.getByteAtOffset(m1, firstMismatch),
