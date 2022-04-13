@@ -21,7 +21,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> memory = createMemoryStorage();
 
-    // FIXME make it final
     private Storage storage;
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();

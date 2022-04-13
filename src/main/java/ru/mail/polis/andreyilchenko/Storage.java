@@ -38,8 +38,6 @@ class Storage implements Closeable {
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope();
-
-        // FIXME check existing files
         for (int i = 0; ; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
@@ -183,7 +181,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
