@@ -42,8 +42,8 @@ class Storage implements Closeable {
         List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope();
         int i = 0;
-        while (i++ >= 0) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
+        while (true) {
+            Path nextFile = basePath.resolve(FILE_NAME + i++ + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
