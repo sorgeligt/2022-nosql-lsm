@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Stream;
 
 class Storage implements Closeable {
     private static final long VERSION = 0;
@@ -41,13 +42,15 @@ class Storage implements Closeable {
 
         List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope();
-        int i = 0;
-        while (true) {
-            Path nextFile = basePath.resolve(FILE_NAME + i++ + FILE_EXT);
-            try {
-                sstables.add(mapForRead(scope, nextFile));
-            } catch (NoSuchFileException e) {
-                break;
+        try (Stream<Path> listFiles = Files.list(basePath)) {
+            long maxCountFiles = listFiles.count();
+            for (int i = 0; i < maxCountFiles; i++) {
+                Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
+                try {
+                    sstables.add(mapForRead(scope, nextFile));
+                } catch (NoSuchFileException e) {
+                    break;
+                }
             }
         }
 
