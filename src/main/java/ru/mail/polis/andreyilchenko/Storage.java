@@ -83,11 +83,12 @@ class Storage implements Closeable {
             Entry<MemorySegment> entry;
             while (iterator.hasNext()) {
                 entry = iterator.next();
+                long byteSizeWithAddition = Long.BYTES + entry.key().byteSize() + Long.BYTES;
                 if (entry.value() == null) {
                     hasTombstone = true;
-                    size += Long.BYTES + entry.key().byteSize() + Long.BYTES;
+                    size += byteSizeWithAddition;
                 } else {
-                    size += Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+                    size += byteSizeWithAddition + entry.value().byteSize();
                 }
                 entriesCount++;
             }
