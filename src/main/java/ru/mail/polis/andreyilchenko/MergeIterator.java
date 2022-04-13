@@ -1,6 +1,5 @@
 package ru.mail.polis.andreyilchenko;
 
-
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;

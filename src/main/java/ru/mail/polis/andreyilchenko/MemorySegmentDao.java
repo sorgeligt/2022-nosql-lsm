@@ -1,6 +1,5 @@
 package ru.mail.polis.andreyilchenko;
 
-
 import jdk.incubator.foreign.MemorySegment;
 import ru.mail.polis.Config;
 import ru.mail.polis.Dao;
@@ -34,13 +33,13 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         lock.readLock().lock();
+        MemorySegment fromTmp = from;
         try {
-            if (from == null) {
-                from = VERY_FIRST_KEY;
+            if (fromTmp == null) {
+                fromTmp = VERY_FIRST_KEY;
             }
-
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(from, to);
-            iterators.add(getMemoryIterator(from, to));
+            ArrayList<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(fromTmp, to);
+            iterators.add(getMemoryIterator(fromTmp, to));
 
             Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 

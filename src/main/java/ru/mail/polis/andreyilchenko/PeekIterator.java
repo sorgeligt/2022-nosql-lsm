@@ -1,6 +1,5 @@
 package ru.mail.polis.andreyilchenko;
 
-
 import java.util.Iterator;
 
 public class PeekIterator<E> implements Iterator<E> {

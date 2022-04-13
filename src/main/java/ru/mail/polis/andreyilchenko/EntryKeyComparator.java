@@ -1,12 +1,11 @@
 package ru.mail.polis.andreyilchenko;
 
-
 import jdk.incubator.foreign.MemorySegment;
 import ru.mail.polis.Entry;
 
 import java.util.Comparator;
 
-public class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
+public final class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
 
     public static final Comparator<Entry<MemorySegment>> INSTANCE = new EntryKeyComparator();
 

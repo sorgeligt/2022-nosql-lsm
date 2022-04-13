@@ -19,7 +19,6 @@ import java.util.Collection;
 import java.util.Iterator;
 
 class Storage implements Closeable {
-
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
@@ -28,6 +27,9 @@ class Storage implements Closeable {
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+
+    private final ResourceScope scope;
+    private final ArrayList<MemorySegment> sstables;
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -38,7 +40,8 @@ class Storage implements Closeable {
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope();
-        for (int i = 0; ; i++) {
+        int i = 0;
+        while (i++ >= 0) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
@@ -49,7 +52,7 @@ class Storage implements Closeable {
 
         return new Storage(scope, sstables);
     }
-    // it is supposed that entries can not be changed externally during this method call
+
     static void save(
             Config config,
             Storage previousState,
@@ -76,7 +79,8 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 if (entry.value() == null) {
                     hasTombstone = true;
@@ -90,16 +94,17 @@ class Storage implements Closeable {
             long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
 
             MemorySegment nextSSTable = MemorySegment.mapFile(
-                            sstableTmpPath,
-                            0,
-                            dataStart + size,
-                            FileChannel.MapMode.READ_WRITE,
-                            writeScope
+                    sstableTmpPath,
+                    0,
+                    dataStart + size,
+                    FileChannel.MapMode.READ_WRITE,
+                    writeScope
             );
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
@@ -108,7 +113,6 @@ class Storage implements Closeable {
 
                 index++;
             }
-
             MemoryAccess.setLongAtOffset(nextSSTable, 0, VERSION);
             MemoryAccess.setLongAtOffset(nextSSTable, 8, entriesCount);
             MemoryAccess.setLongAtOffset(nextSSTable, 16, hasTombstone ? 1 : 0);
@@ -153,11 +157,6 @@ class Storage implements Closeable {
 
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
-
-    // supposed to have fresh files first
-
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
 
     private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables) {
         this.scope = scope;
