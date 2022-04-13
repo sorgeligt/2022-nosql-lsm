@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 
 class Storage implements Closeable {
     private static final long VERSION = 0;
@@ -29,7 +30,7 @@ class Storage implements Closeable {
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
 
     private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
+    private final List<MemorySegment> sstables;
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -38,7 +39,7 @@ class Storage implements Closeable {
             finishCompact(config, compactedFile);
         }
 
-        ArrayList<MemorySegment> sstables = new ArrayList<>();
+        List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope();
         int i = 0;
         while (i++ >= 0) {
@@ -158,7 +159,7 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables) {
+    private Storage(ResourceScope scope, List<MemorySegment> sstables) {
         this.scope = scope;
         this.sstables = sstables;
     }
@@ -251,8 +252,8 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
-        ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
         for (MemorySegment sstable : sstables) {
             iterators.add(iterate(sstable, keyFrom, keyTo));
         }
@@ -265,7 +266,6 @@ class Storage implements Closeable {
             scope.close();
         }
     }
-
 
     public boolean isClosed() {
         return !scope.isAlive();
