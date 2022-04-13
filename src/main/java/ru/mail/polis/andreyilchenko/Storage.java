@@ -80,8 +80,9 @@ class Storage implements Closeable {
             long entriesCount = 0;
             boolean hasTombstone = false;
             Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            Entry<MemorySegment> entry;
             while (iterator.hasNext()) {
-                Entry<MemorySegment> entry = iterator.next();
+                entry = iterator.next();
                 if (entry.value() == null) {
                     hasTombstone = true;
                     size += Long.BYTES + entry.key().byteSize() + Long.BYTES;
@@ -105,7 +106,7 @@ class Storage implements Closeable {
             long offset = dataStart;
             iterator = entries.iterator();
             while (iterator.hasNext()) {
-                Entry<MemorySegment> entry = iterator.next();
+                entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
