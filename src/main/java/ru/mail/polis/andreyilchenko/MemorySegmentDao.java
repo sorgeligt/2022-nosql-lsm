@@ -6,8 +6,8 @@ import ru.mail.polis.Dao;
 import ru.mail.polis.Entry;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -38,7 +38,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (fromTmp == null) {
                 fromTmp = VERY_FIRST_KEY;
             }
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(fromTmp, to);
+            List<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(fromTmp, to);
             iterators.add(getMemoryIterator(fromTmp, to));
 
             Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
