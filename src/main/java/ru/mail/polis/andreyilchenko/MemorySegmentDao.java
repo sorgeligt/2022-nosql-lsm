@@ -38,12 +38,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (fromTmp == null) {
                 fromTmp = VERY_FIRST_KEY;
             }
-            if (storage.getSstablesSize() == 0) {
-                return new TombstoneFilteringIterator(getMemoryIterator(fromTmp, to));
-            }
             List<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(fromTmp, to);
             iterators.add(getMemoryIterator(fromTmp, to));
             Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
+
             return new TombstoneFilteringIterator(mergeIterator);
         } finally {
             lock.readLock().unlock();
@@ -70,7 +68,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (result == null) {
                 result = storage.get(key);
             }
-
             return (result == null || result.isTombstone()) ? null : result;
         } finally {
             lock.readLock().unlock();
