@@ -39,6 +39,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 fromTmp = VERY_FIRST_KEY;
             }
             List<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(fromTmp, to);
+            if (iterators.size() == 0) {
+                return getMemoryIterator(fromTmp, to);
+            }
             iterators.add(getMemoryIterator(fromTmp, to));
 
             Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
@@ -52,11 +55,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private Iterator<Entry<MemorySegment>> getMemoryIterator(MemorySegment from, MemorySegment to) {
         lock.readLock().lock();
         try {
-
             if (to == null) {
                 return memory.tailMap(from).values().iterator();
             }
-
             return memory.subMap(from, to).values().iterator();
         } finally {
             lock.readLock().unlock();
