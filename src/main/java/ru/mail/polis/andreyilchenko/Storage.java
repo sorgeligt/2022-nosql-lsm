@@ -254,11 +254,15 @@ class Storage implements Closeable {
     // last is newer
     // it is ok to mutate list after
     public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
-        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(getSstablesSize());
         for (MemorySegment sstable : sstables) {
             iterators.add(iterate(sstable, keyFrom, keyTo));
         }
         return iterators;
+    }
+
+    public int getSstablesSize(){
+        return sstables.size();
     }
 
     @Override
@@ -276,7 +280,7 @@ class Storage implements Closeable {
         if (sstables.isEmpty()) {
             return true;
         }
-        if (sstables.size() > 1) {
+        if (getSstablesSize() > 1) {
             return false;
         }
 
