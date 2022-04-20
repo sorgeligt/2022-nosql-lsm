@@ -6,11 +6,16 @@ import ru.mail.polis.Dao;
 import ru.mail.polis.Entry;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -18,7 +23,16 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[]{});
 
-    private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> memory = createMemoryStorage();
+    private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> memory =
+            new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+    private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> flushMemory =
+            new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+
+    private final AtomicBoolean isClosed = new AtomicBoolean(false);
+    private final AtomicLong memorySpending = new AtomicLong(0);
+
+    private final ExecutorService flushExecutorService = Executors.newSingleThreadExecutor();
+    private final ExecutorService compactExecutorService = Executors.newSingleThreadExecutor();
 
     private Storage storage;
 
@@ -32,14 +46,20 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+        if (isClosed.get()) {
+            throw new IllegalStateException("DAO IS CLOSED");
+        }
         lock.readLock().lock();
-        MemorySegment fromTmp = from;
         try {
+            MemorySegment fromTmp = from;
             if (fromTmp == null) {
                 fromTmp = VERY_FIRST_KEY;
             }
+
             List<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(fromTmp, to);
             iterators.add(getMemoryIterator(fromTmp, to));
+            iterators.add(getFlushMemoryIterator(fromTmp, to));
+
             Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 
             return new TombstoneFilteringIterator(mergeIterator);
@@ -60,15 +80,32 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
     }
 
-    @Override
-    public Entry<MemorySegment> get(MemorySegment key) {
+    private Iterator<Entry<MemorySegment>> getFlushMemoryIterator(MemorySegment from, MemorySegment to) {
         lock.readLock().lock();
         try {
-            Entry<MemorySegment> result = memory.get(key);
-            if (result == null) {
-                result = storage.get(key);
+            if (to == null) {
+                return flushMemory.tailMap(from).values().iterator();
             }
-            return (result == null || result.isTombstone()) ? null : result;
+            return flushMemory.subMap(from, to).values().iterator();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public Entry<MemorySegment> get(MemorySegment key) {
+        if (isClosed.get()) {
+            throw new IllegalStateException("DAO IS CLOSED");
+        }
+        lock.readLock().lock();
+        try {
+            Iterator<Entry<MemorySegment>> resultIterator = get(key, null); // to get the following entry
+            if (!resultIterator.hasNext()) {
+                return null;
+            }
+            Entry<MemorySegment> entry = resultIterator.next();
+            return MemorySegmentComparator.INSTANCE.compare(entry.key(), key) == 0
+                    && !entry.isTombstone() ? entry : null;
         } finally {
             lock.readLock().unlock();
         }
@@ -76,28 +113,68 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void upsert(Entry<MemorySegment> entry) {
+        if (isClosed.get()) {
+            throw new IllegalStateException("DAO IS CLOSED");
+        }
         lock.readLock().lock();
         try {
+            if (memorySpending.addAndGet(sizeEntry(entry)) >= config.flushThresholdBytes()) {
+                ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> old = memory;
+                memory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+                long pervMemorySpending = memorySpending.getAndSet(sizeEntry(entry));
+                try {
+                    flushExecutorService.execute(this::serviceFlush);
+                } catch (UncheckedIOException e) {
+                    memorySpending.set(pervMemorySpending);
+                    throw new UncheckedIOException(new IOException(e)); // very bad, I know
+                }
+            }
             memory.put(entry.key(), entry);
         } finally {
             lock.readLock().unlock();
         }
     }
 
-    @Override
-    public void flush() throws IOException {
+    private long sizeEntry(Entry<MemorySegment> entry) {
+        return Long.BYTES + entry.key().byteSize() + Long.BYTES + (
+                entry.value() == null
+                        ? 0 : entry.key().byteSize()
+        );
+    }
+
+
+    private void serviceFlush() {
         lock.writeLock().lock();
         try {
-            if (storage.isClosed()) {
+            if (storage.isClosed() || memory.isEmpty()) {
                 return;
             }
-            if (memory.isEmpty()) {
+            storage.close();
+            Storage.save(config, storage, flushMemory.values());
+            flushMemory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+            storage = Storage.load(config);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } finally {
+
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public void flush() throws IOException {
+        if (isClosed.get()) {
+            throw new IllegalStateException("DAO IS CLOSED");
+        }
+        lock.writeLock().lock();
+        try {
+            if (storage.isClosed() || memory.isEmpty()) {
                 return;
             }
             storage.close();
             Storage.save(config, storage, memory.values());
-            memory = createMemoryStorage();
-            this.storage = Storage.load(config);
+            memory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+            storage = Storage.load(config);
         } finally {
             lock.writeLock().unlock();
         }
@@ -105,24 +182,26 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void compact() throws IOException {
-        lock.writeLock().lock();
-        try {
-            if (memory.isEmpty() && storage.isCompacted()) {
-                return;
-            }
-            Storage.compact(config, this::all);
-            storage.close();
-            memory = createMemoryStorage();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        compactExecutorService.execute(() -> {
+                    synchronized (MemorySegmentDao.this) {
+                        if (memory.isEmpty() && storage.isCompacted()) {
+                            return;
+                        }
+                        try {
+                            Storage.compact(config, this::all);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+                }
+        );
     }
 
     @Override
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         lock.writeLock().lock();
         try {
-            if (storage.isClosed()) {
+            if (storage.isClosed() || isClosed.get()) {
                 return;
             }
             storage.close();
@@ -130,6 +209,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 return;
             }
             Storage.save(config, storage, memory.values());
+            isClosed.set(true);
         } finally {
             lock.writeLock().unlock();
         }
@@ -169,9 +249,5 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             current = null;
             return next;
         }
-    }
-
-    private static ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> createMemoryStorage() {
-        return new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
     }
 }
