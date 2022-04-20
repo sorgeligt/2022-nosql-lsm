@@ -28,7 +28,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> flushMemory =
             new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
 
-    private final AtomicBoolean isClosed = new AtomicBoolean(false);
+    private final AtomicBoolean isClosed = new AtomicBoolean();
     private final AtomicLong memorySpending = new AtomicLong(0);
 
     private final ExecutorService flushExecutorService = Executors.newSingleThreadExecutor();
@@ -42,6 +42,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     public MemorySegmentDao(Config config) throws IOException {
         this.config = config;
         this.storage = Storage.load(config);
+        isClosed.set(false);
     }
 
     @Override
@@ -68,30 +69,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
     }
 
-    private Iterator<Entry<MemorySegment>> getMemoryIterator(MemorySegment from, MemorySegment to) {
-        lock.readLock().lock();
-        try {
-            if (to == null) {
-                return memory.tailMap(from).values().iterator();
-            }
-            return memory.subMap(from, to).values().iterator();
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
-    private Iterator<Entry<MemorySegment>> getFlushMemoryIterator(MemorySegment from, MemorySegment to) {
-        lock.readLock().lock();
-        try {
-            if (to == null) {
-                return flushMemory.tailMap(from).values().iterator();
-            }
-            return flushMemory.subMap(from, to).values().iterator();
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
         if (isClosed.get()) {
@@ -104,8 +81,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 return null;
             }
             Entry<MemorySegment> entry = resultIterator.next();
-            return MemorySegmentComparator.INSTANCE.compare(entry.key(), key) == 0
-                    && !entry.isTombstone() ? entry : null;
+            return MemorySegmentComparator.INSTANCE.compare(entry.key(), key) == 0 ? entry : null;
         } finally {
             lock.readLock().unlock();
         }
@@ -132,32 +108,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             memory.put(entry.key(), entry);
         } finally {
             lock.readLock().unlock();
-        }
-    }
-
-    private long sizeEntry(Entry<MemorySegment> entry) {
-        return Long.BYTES + entry.key().byteSize() + Long.BYTES + (
-                entry.value() == null
-                        ? 0 : entry.key().byteSize()
-        );
-    }
-
-
-    private void serviceFlush() {
-        lock.writeLock().lock();
-        try {
-            if (storage.isClosed() || memory.isEmpty()) {
-                return;
-            }
-            storage.close();
-            Storage.save(config, storage, flushMemory.values());
-            flushMemory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
-            storage = Storage.load(config);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } finally {
-
-            lock.writeLock().unlock();
         }
     }
 
@@ -188,7 +138,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                             return;
                         }
                         try {
-                            Storage.compact(config, this::all);
+                            List<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(null, null);
+                            iterators.add(getFlushMemoryIterator(null, null));
+                            Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
+                            Storage.compact(config, () -> mergeIterator);
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
                         }
@@ -208,8 +161,59 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (memory.isEmpty()) {
                 return;
             }
+            flushExecutorService.shutdown();
+            compactExecutorService.shutdown();
             Storage.save(config, storage, memory.values());
             isClosed.set(true);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private Iterator<Entry<MemorySegment>> getMemoryIterator(MemorySegment from, MemorySegment to) {
+        lock.readLock().lock();
+        try {
+            if (to == null) {
+                return memory.tailMap(from).values().iterator();
+            }
+            return memory.subMap(from, to).values().iterator();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private Iterator<Entry<MemorySegment>> getFlushMemoryIterator(MemorySegment from, MemorySegment to) {
+        lock.readLock().lock();
+        try {
+            if (to == null) {
+                return flushMemory.tailMap(from).values().iterator();
+            }
+            return flushMemory.subMap(from, to).values().iterator();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private long sizeEntry(Entry<MemorySegment> entry) {
+        return Long.BYTES + entry.key().byteSize() + Long.BYTES + (
+                entry.value() == null
+                        ? 0 : entry.key().byteSize()
+        );
+    }
+
+
+    private void serviceFlush() {
+        lock.writeLock().lock();
+        try {
+            if (storage.isClosed() || memory.isEmpty()) {
+                return;
+            }
+            storage.close();
+            Storage.save(config, storage, flushMemory.values());
+            flushMemory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
+            storage = Storage.load(config);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         } finally {
             lock.writeLock().unlock();
         }
