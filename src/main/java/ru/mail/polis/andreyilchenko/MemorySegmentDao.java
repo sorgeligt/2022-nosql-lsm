@@ -61,8 +61,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             iterators.add(getMemoryIterator(fromTmp, to));
             iterators.add(getFlushMemoryIterator(fromTmp, to));
 
-            Iterator<Entry<MemorySegment>> mergeIterator =
-                    MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
+            Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 
             return new TombstoneFilteringIterator(mergeIterator);
         } finally {
@@ -97,11 +96,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         try {
             if (memorySpending.addAndGet(sizeEntry(entry)) >= config.flushThresholdBytes()) {
                 memory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
-                long pervMemorySpending = memorySpending.getAndSet(sizeEntry(entry));
                 flushExecutorService.execute(this::serviceFlush);
-                /*} catch (UncheckedIOException e) {
-                    memorySpending.set(pervMemorySpending); ?
-                }*/
+                // catch and memorySpending.set(pervMemorySpending) ?
             }
             memory.put(entry.key(), entry);
         } finally {
@@ -138,7 +134,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                         try {
                             List<Iterator<Entry<MemorySegment>>> iterators = storage.iterate(null, null);
                             iterators.add(getFlushMemoryIterator(null, null));
-                            Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
+                            Iterator<Entry<MemorySegment>> mergeIterator
+                                    = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
                             Storage.compact(config, () -> mergeIterator);
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
