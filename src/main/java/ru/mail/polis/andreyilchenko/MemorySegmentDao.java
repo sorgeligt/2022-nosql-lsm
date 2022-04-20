@@ -48,7 +48,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         if (isClosed.get()) {
-            throw new IllegalStateException("DAO IS CLOSED");
+            throw new IllegalStateException("DAO IS CLOSED!!!!");
         }
         lock.readLock().lock();
         try {
@@ -61,7 +61,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             iterators.add(getMemoryIterator(fromTmp, to));
             iterators.add(getFlushMemoryIterator(fromTmp, to));
 
-            Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
+            Iterator<Entry<MemorySegment>> mergeIterator =
+                    MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 
             return new TombstoneFilteringIterator(mergeIterator);
         } finally {
@@ -72,7 +73,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
         if (isClosed.get()) {
-            throw new IllegalStateException("DAO IS CLOSED");
+            throw new IllegalStateException("DAO IS CLOSED!!!");
         }
         lock.readLock().lock();
         try {
@@ -90,20 +91,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public void upsert(Entry<MemorySegment> entry) {
         if (isClosed.get()) {
-            throw new IllegalStateException("DAO IS CLOSED");
+            throw new IllegalStateException("DAO IS CLOSED!!");
         }
         lock.readLock().lock();
         try {
             if (memorySpending.addAndGet(sizeEntry(entry)) >= config.flushThresholdBytes()) {
-                ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> old = memory;
                 memory = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
                 long pervMemorySpending = memorySpending.getAndSet(sizeEntry(entry));
-                try {
-                    flushExecutorService.execute(this::serviceFlush);
-                } catch (UncheckedIOException e) {
-                    memorySpending.set(pervMemorySpending);
-                    throw new UncheckedIOException(new IOException(e)); // very bad, I know
-                }
+                flushExecutorService.execute(this::serviceFlush);
+                /*} catch (UncheckedIOException e) {
+                    memorySpending.set(pervMemorySpending); ?
+                }*/
             }
             memory.put(entry.key(), entry);
         } finally {
@@ -114,7 +112,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public void flush() throws IOException {
         if (isClosed.get()) {
-            throw new IllegalStateException("DAO IS CLOSED");
+            throw new IllegalStateException("DAO IS CLOSED!");
         }
         lock.writeLock().lock();
         try {
@@ -200,7 +198,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                         ? 0 : entry.key().byteSize()
         );
     }
-
 
     private void serviceFlush() {
         lock.writeLock().lock();
