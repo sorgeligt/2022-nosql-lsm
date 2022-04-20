@@ -127,7 +127,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public void compact() throws IOException {
         compactExecutorService.execute(() -> {
-                    synchronized (MemorySegmentDao.this) {
+                    synchronized (this) {
                         if (memory.isEmpty() && storage.isCompacted()) {
                             return;
                         }
