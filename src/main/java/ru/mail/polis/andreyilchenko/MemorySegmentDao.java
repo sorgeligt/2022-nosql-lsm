@@ -163,7 +163,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         @Override
         public Entry<MemorySegment> next() {
             if (!hasNext()) {
-                throw new NoSuchElementException("...");
+                throw new NoSuchElementException();
             }
             Entry<MemorySegment> next = current;
             current = null;
