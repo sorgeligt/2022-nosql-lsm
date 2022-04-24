@@ -145,7 +145,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         try {
             executor.shutdown();
             boolean termination = executor.awaitTermination(24, TimeUnit.HOURS);
-            if(!termination){
+            if (!termination) {
                 throw new TimeoutException();
             }
         } catch (InterruptedException e) {
