@@ -284,6 +284,20 @@ class Storage implements Closeable {
         return MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 0;
     }
 
+    public static long getSize(Entry<MemorySegment> entry) {
+        long byteSizeWithAddition = Long.BYTES + entry.key().byteSize() + Long.BYTES;
+        if (entry.value() == null) {
+            return byteSizeWithAddition;
+        } else {
+            return byteSizeWithAddition + entry.value().byteSize();
+        }
+    }
+
+    public static long getSizeOnDisk(Entry<MemorySegment> entry) {
+        return getSize(entry) + INDEX_RECORD_SIZE;
+    }
+
+
     public interface Data {
         Iterator<Entry<MemorySegment>> iterator() throws IOException;
     }
