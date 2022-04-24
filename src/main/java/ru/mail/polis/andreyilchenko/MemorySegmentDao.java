@@ -23,8 +23,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private final ReadWriteLock upsetLock = new ReentrantReadWriteLock();
 
+
     private final Config config;
     private volatile State state;
+
+//    private AtomicBoolean isFlushingInBg = new AtomicBoolean(false);
 
     public MemorySegmentDao(Config config) throws IOException {
         this.config = config;
@@ -87,24 +90,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private void flushInBg() {
         State state = this.state;
         executor.execute(() -> {
+            upsetLock.writeLock().lock();
             try {
-
-                upsetLock.writeLock().lock();
-                try {
-                    this.state = state.prepareForFlush();
-                } finally {
-                    upsetLock.writeLock().unlock();
-                }
+                this.state = state.prepareForFlush();
+                state.storage.close();
                 Storage.save(config, state.storage, state.flushing.values());
                 Storage load = Storage.load(config);
-                upsetLock.writeLock().lock();
-                try {
-                    this.state = state.afterFlush(load);
-                } finally {
-                    upsetLock.writeLock().unlock();
-                }
+                this.state = state.afterFlush(load);
             } catch (IOException e) {
                 //TODO LOG
+            } finally {
+                upsetLock.writeLock().unlock();
             }
         });
     }
@@ -125,6 +121,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         } finally {
             upsetLock.writeLock().unlock();
         }
+        state.storage.close();
         Storage.save(config, state.storage, state.flushing.values());
         Storage load = Storage.load(config);
         upsetLock.writeLock().lock();
