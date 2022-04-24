@@ -57,9 +57,6 @@ class Storage implements Closeable {
             Config config,
             Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
-        if (previousState.scope.isAlive()) {
-            return;
-        }
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         save(entries::iterator, sstablePath);
