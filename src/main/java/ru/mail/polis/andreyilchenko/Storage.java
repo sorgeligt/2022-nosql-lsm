@@ -58,7 +58,7 @@ class Storage implements Closeable {
             Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
         if (previousState.scope.isAlive()) {
-            throw new IllegalStateException("Previous storage is open for write");
+            return;
         }
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
@@ -251,8 +251,6 @@ class Storage implements Closeable {
         };
     }
 
-    // last is newer
-    // it is ok to mutate list after
     public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
         for (MemorySegment sstable : sstables) {
@@ -285,18 +283,13 @@ class Storage implements Closeable {
     }
 
     public static long getSize(Entry<MemorySegment> entry) {
-        long byteSizeWithAddition = Long.BYTES + entry.key().byteSize() + Long.BYTES;
+        long byteSizeWithAddition = Long.BYTES + entry.key().byteSize() + Long.BYTES + INDEX_RECORD_SIZE;
         if (entry.value() == null) {
             return byteSizeWithAddition;
         } else {
             return byteSizeWithAddition + entry.value().byteSize();
         }
     }
-
-    public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + INDEX_RECORD_SIZE;
-    }
-
 
     public interface Data {
         Iterator<Entry<MemorySegment>> iterator() throws IOException;

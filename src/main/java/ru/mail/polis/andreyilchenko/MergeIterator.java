@@ -1,10 +1,6 @@
 package ru.mail.polis.andreyilchenko;
 
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
-import java.util.PriorityQueue;
+import java.util.*;
 
 public class MergeIterator<E> implements Iterator<E> {
 
@@ -84,7 +80,5 @@ public class MergeIterator<E> implements Iterator<E> {
             super(delegate);
             this.index = index;
         }
-
     }
-
 }
