@@ -1,6 +1,8 @@
 package ru.mail.polis.andreyilchenko;
 
 import jdk.incubator.foreign.MemorySegment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.mail.polis.Config;
 import ru.mail.polis.Dao;
 import ru.mail.polis.Entry;
@@ -19,7 +21,16 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[]{});
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Logger logger = LoggerFactory.getLogger(MemorySegmentDao.class);
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MemorySegmentDao");
+        thread.setUncaughtExceptionHandler((t, e) -> {
+            logger.error("Uncaught Exception occurred on thread: " + t.getName());
+            logger.error("Exception message: " + e.getMessage());
+        });
+        return thread;
+    });
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -33,10 +44,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        DaoState state = this.state;
-        if (state.storage.isClosed()) {
-            throw new IllegalStateException("dao is closed");
-        }
+        DaoState state = getDaoState();
 
         MemorySegment fromTmp = from;
         if (fromTmp == null) {
@@ -52,26 +60,23 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
-        DaoState state = this.state;
-        if (state.storage.isClosed()) {
-            throw new IllegalStateException("dao is closed");
-        }
+        DaoState state = getDaoState();
         Entry<MemorySegment> result = state.memory.get(key);
         if (result == null) {
-            result = state.storage.get(key);
+            result = state.flushing.get(key);
             if (result == null) {
-                return null;
+                result = state.storage.get(key);
             }
+        }
+        if (result == null) {
+            return null;
         }
         return result.isTombstone() ? null : result;
     }
 
     @Override
     public void upsert(Entry<MemorySegment> entry) {
-        DaoState state = this.state;
-        if (state.storage.isClosed()) {
-            throw new IllegalStateException("dao is closed");
-        }
+        DaoState state = getDaoState();
         boolean flushFlag;
         lock.writeLock().lock();
         try {
@@ -86,10 +91,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void flush() throws IOException {
-        DaoState state = this.state;
-        if (state.storage.isClosed()) {
-            throw new IllegalStateException("dao is closed");
-        }
+        DaoState state = getDaoState();
         lock.writeLock().lock();
         try {
             if (state.memory.isEmpty()) {
@@ -102,14 +104,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             lock.writeLock().unlock();
         }
         Storage.save(config, state.storage, state.flushing.values());
-        Storage loadStorage = Storage.load(config);
-        lock.writeLock().lock();
-        try {
-            this.state = new DaoState(state.config, state.memory, MemoryWrapper.EMPTY, loadStorage);
-        } finally {
-            lock.writeLock().unlock();
-        }
-        state.storage.close();
+        newDaoStateWithLoadStorage(state);
     }
 
     @Override
@@ -123,17 +118,26 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 EntryKeyComparator.INSTANCE
         ));
 
+        newDaoStateWithLoadStorage(state);
+    }
+
+    private void newDaoStateWithLoadStorage(DaoState state) throws IOException {
         Storage loadStorage = Storage.load(config);
         lock.writeLock().lock();
         try {
-            if (!state.flushing.equals(MemoryWrapper.EMPTY)) {
-                throw new IllegalStateException();
-            }
             this.state = new DaoState(state.config, state.memory, MemoryWrapper.EMPTY, loadStorage);
         } finally {
             lock.writeLock().unlock();
         }
         state.storage.close();
+    }
+
+    private DaoState getDaoState() {
+        DaoState state = this.state;
+        if (state.storage.isClosed()) {
+            throw new IllegalStateException("dao is closed");
+        }
+        return state;
     }
 
     @Override
@@ -142,18 +146,19 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         if (state.storage.isClosed()) {
             return;
         }
+        state.storage.close();
         try {
             executor.shutdown();
             boolean termination = executor.awaitTermination(24, TimeUnit.HOURS);
-            if(!termination){
+            if (!termination) {
                 throw new TimeoutException();
             }
         } catch (InterruptedException e) {
+            logger.error("close method InterruptedException");
             Thread.currentThread().interrupt();
         } catch (TimeoutException e) {
-            throw new RuntimeException(e);
+            throw new IOException(e);
         }
-        state.storage.close();
         if (state.memory.isEmpty()) {
             return;
         }
@@ -173,9 +178,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 );
                 Storage.save(config, state.storage, state.flushing.values());
                 Storage loadStorage = Storage.load(config);
-                if (state.flushing.equals(MemoryWrapper.EMPTY)) {
-                    throw new IllegalStateException();
-                }
                 this.state = new DaoState(state.config, state.memory, MemoryWrapper.EMPTY, loadStorage);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);

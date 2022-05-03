@@ -42,8 +42,9 @@ class MemoryWrapper {
 
     public boolean put(MemorySegment key, Entry<MemorySegment> entry) {
         long sizeData = Storage.getSize(entry);
-        long offsetForData = putEntryAndReturnOffsetForSize(key, entry);
-        sizeData -= offsetForData;
+        // If we had an entry, we subtract the size of the past data
+        long subtractData = putAndReturnSubtractIfContains(key, entry);
+        sizeData -= subtractData;
         if (currentSize.addAndGet(sizeData) > sizeThreshold) {
             return !memoryLimitFlag.getAndSet(true);
         }
@@ -54,7 +55,7 @@ class MemoryWrapper {
         return map.get(key);
     }
 
-    private long putEntryAndReturnOffsetForSize(MemorySegment key, Entry<MemorySegment> entry) {
+    private long putAndReturnSubtractIfContains(MemorySegment key, Entry<MemorySegment> entry) {
         Entry<MemorySegment> segmentEntry = map.put(key, entry);
         if (segmentEntry != null) {
             return Storage.getSize(segmentEntry);
