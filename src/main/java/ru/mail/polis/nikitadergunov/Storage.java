@@ -11,28 +11,30 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 final class Storage implements Closeable {
-
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 2;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
 
-    private static final String FILE_NAME = "data";
-    private static final String FILE_EXT = ".dat";
-    private static final String FILE_EXT_TMP = ".tmp";
+    static final String FILE_NAME = "data";
+    static final String FILE_EXT = ".dat";
+    static final String FILE_EXT_TMP = ".tmp";
+    static final int LOW_PRIORITY_FILE = 0;
+    static final AtomicInteger maxPriorityFile = new AtomicInteger();
+    private static final Comparator<Path> fileComparator = Comparator.comparingInt(Storage::getPriorityFile);
 
     private final ResourceScope scope;
-    private final List<MemorySegment> sstables;
+    final List<MemorySegment> sstables;
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -40,20 +42,20 @@ final class Storage implements Closeable {
         List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope();
 
-        try (Stream<Path> listFiles = Files.list(basePath)) {
-            long maxCountFiles = listFiles.count();
-            maxCountFiles = maxCountFiles > Integer.MAX_VALUE ? Integer.MAX_VALUE : maxCountFiles;
-            for (int i = 0; i < maxCountFiles; ++i) {
-                Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
-                try {
-                    sstables.add(mapForRead(scope, nextFile));
-                } catch (NoSuchFileException e) {
-                    break;
-                }
+        try (Stream<Path> streamFiles = Files.list(basePath)) {
+            List<Path> sstablesFiles = streamFiles
+                    .filter(path -> path.toString().endsWith(FILE_EXT))
+                    .sorted(fileComparator.reversed())
+                    .toList();
+
+            if (!sstablesFiles.isEmpty()) {
+                maxPriorityFile.set(getPriorityFile(sstablesFiles.get(0)));
+            }
+
+            for (Path path : sstablesFiles) {
+                sstables.add(mapForRead(scope, path));
             }
         }
-
-        Collections.reverse(sstables);
 
         return new Storage(scope, sstables);
     }
@@ -61,12 +63,12 @@ final class Storage implements Closeable {
     // it is supposed that entries can not be changed externally during this method call
     static void save(
             Config config,
-            Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
-        if (previousState.scope.isAlive()) {
-            throw new IllegalStateException("Previous storage is open for write");
+        if (entries.isEmpty()) {
+            return;
         }
-        int nextSSTableIndex = previousState.sstables.size();
+
+        int nextSSTableIndex = maxPriorityFile.incrementAndGet();
         long entriesCount = entries.size();
         long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
 
@@ -105,13 +107,13 @@ final class Storage implements Closeable {
             }
 
             MemoryAccess.setLongAtOffset(nextSSTable, 0, VERSION);
-            MemoryAccess.setLongAtOffset(nextSSTable, 8, entriesCount);
+            MemoryAccess.setLongAtOffset(nextSSTable, Long.BYTES, entriesCount);
 
             nextSSTable.force();
         }
-
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         Files.move(sstableTmpPath, sstablePath, StandardCopyOption.ATOMIC_MOVE);
+        maxPriorityFile.incrementAndGet();
     }
 
     private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
@@ -126,10 +128,17 @@ final class Storage implements Closeable {
     }
 
     @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
+    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws IOException {
         long size = Files.size(file);
 
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
+    }
+
+    private static int getPriorityFile(Path path) {
+        String file = path.getFileName().toString();
+        return Integer.parseInt(file.substring(
+                FILE_NAME.length(),
+                file.length() - FILE_EXT.length()));
     }
 
     private Storage(ResourceScope scope, List<MemorySegment> sstables) {
@@ -137,9 +146,17 @@ final class Storage implements Closeable {
         this.sstables = sstables;
     }
 
+    private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
+        long index = entryIndex(sstable, key);
+        if (index < 0) {
+            return ~index;
+        }
+        return index;
+    }
+
     // file structure:
     // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/valueSize/value)...)
-    private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
+    private long entryIndex(MemorySegment sstable, MemorySegment key) {
         long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
         if (fileVersion != 0) {
             throw new IllegalStateException("Unknown file version: " + fileVersion);
@@ -169,7 +186,7 @@ final class Storage implements Closeable {
             }
         }
 
-        return left;
+        return ~left;
     }
 
     private Entry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
@@ -204,19 +221,27 @@ final class Storage implements Closeable {
         };
     }
 
-    public Iterator<Entry<MemorySegment>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
-        List<IndexedPeekIterator<Entry<MemorySegment>>> peekIterators = new ArrayList<>();
-        int index = 0;
+    public Entry<MemorySegment> get(MemorySegment key) {
+        long keyFromPos;
         for (MemorySegment sstable : sstables) {
-            Iterator<Entry<MemorySegment>> iterator = iterate(sstable, keyFrom, keyTo);
-            peekIterators.add(new IndexedPeekIterator<>(index, iterator));
-            index++;
+            keyFromPos = entryIndex(sstable, key);
+            if (keyFromPos >= 0) {
+                return entryAt(sstable, keyFromPos);
+            }
         }
-        return MergeIterator.of(peekIterators, EntryKeyComparator.INSTANCE);
+        return null;
+    }
+
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+        for (MemorySegment sstable : sstables) {
+            iterators.add(iterate(sstable, keyFrom, keyTo));
+        }
+        return iterators;
     }
 
     @Override
-    public void close() throws IOException {
+    public synchronized void close() {
         if (scope.isAlive()) {
             scope.close();
         }
@@ -225,4 +250,5 @@ final class Storage implements Closeable {
     public boolean isClosed() {
         return !scope.isAlive();
     }
+
 }
